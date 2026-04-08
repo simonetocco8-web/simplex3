@@ -32,7 +32,22 @@ if (!isLoggedIn() && $totaleUtenti > 0) {
     exit;
 }
 
+$editId = isset($_GET['edit']) ? (int) $_GET['edit'] : 0;
+$utenteInModifica = null;
+
+if ($editId > 0) {
+    $stmtEdit = $pdo->prepare('SELECT id, nome_utente, nome, cognome, telefono, email, ruolo, attivo FROM utenti WHERE id = :id LIMIT 1');
+    $stmtEdit->execute([':id' => $editId]);
+    $utenteInModifica = $stmtEdit->fetch();
+
+    if (!$utenteInModifica) {
+        $errors[] = 'Utente da modificare non trovato.';
+        $editId = 0;
+    }
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $azione = $_POST['azione'] ?? 'crea';
     $nomeUtente = trim($_POST['nome_utente'] ?? '');
     $nome = trim($_POST['nome'] ?? '');
     $cognome = trim($_POST['cognome'] ?? '');
@@ -42,19 +57,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $ruolo = 'amministratore';
     $attivo = isset($_POST['attivo']) ? 1 : 0;
 
-    if ($nomeUtente === '' || $nome === '' || $cognome === '' || $email === '' || $password === '') {
+    if ($nomeUtente === '' || $nome === '' || $cognome === '' || $email === '') {
         $errors[] = 'Compila tutti i campi obbligatori.';
-    }
-
-    if (strlen($password) < 8) {
-        $errors[] = 'La password deve avere almeno 8 caratteri.';
     }
 
     if ($email !== '' && !filter_var($email, FILTER_VALIDATE_EMAIL)) {
         $errors[] = 'Inserisci una email valida.';
     }
 
-    if (!$errors) {
+    if ($azione === 'crea' && $password === '') {
+        $errors[] = 'La password è obbligatoria in creazione.';
+    }
+
+    if ($password !== '' && strlen($password) < 8) {
+        $errors[] = 'La password deve avere almeno 8 caratteri.';
+    }
+
+    if (!$errors && $azione === 'crea') {
         $stmt = $pdo->prepare(
             'INSERT INTO utenti (nome_utente, nome, cognome, telefono, email, ruolo, password_hash, attivo)
              VALUES (:nome_utente, :nome, :cognome, :telefono, :email, :ruolo, :password_hash, :attivo)'
@@ -78,6 +97,55 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $errors[] = 'Nome Utente o Email già presente.';
             } else {
                 $errors[] = 'Errore durante il salvataggio dell\'utente.';
+            }
+        }
+    }
+
+    if (!$errors && $azione === 'modifica') {
+        $idUtente = (int) ($_POST['id_utente'] ?? 0);
+        if ($idUtente <= 0) {
+            $errors[] = 'ID utente non valido.';
+        } else {
+            $params = [
+                ':id' => $idUtente,
+                ':nome_utente' => $nomeUtente,
+                ':nome' => $nome,
+                ':cognome' => $cognome,
+                ':telefono' => $telefono !== '' ? $telefono : null,
+                ':email' => $email,
+                ':ruolo' => $ruolo,
+                ':attivo' => $attivo,
+            ];
+
+            $sql = 'UPDATE utenti
+                    SET nome_utente = :nome_utente,
+                        nome = :nome,
+                        cognome = :cognome,
+                        telefono = :telefono,
+                        email = :email,
+                        ruolo = :ruolo,
+                        attivo = :attivo';
+
+            if ($password !== '') {
+                $sql .= ', password_hash = :password_hash';
+                $params[':password_hash'] = password_hash($password, PASSWORD_DEFAULT);
+            }
+
+            $sql .= ' WHERE id = :id';
+
+            $stmtUpd = $pdo->prepare($sql);
+
+            try {
+                $stmtUpd->execute($params);
+                $success = 'Utente aggiornato correttamente.';
+                $editId = 0;
+                $utenteInModifica = null;
+            } catch (PDOException $e) {
+                if ((int) $e->errorInfo[1] === 1062) {
+                    $errors[] = 'Nome Utente o Email già presente.';
+                } else {
+                    $errors[] = 'Errore durante l\'aggiornamento dell\'utente.';
+                }
             }
         }
     }
@@ -129,32 +197,40 @@ renderHeader('Simplex - Utenti');
             <?php endforeach; ?>
 
             <div class="card mb-4">
-                <div class="card-header">Nuovo Utente</div>
+                <div class="card-header"><?= $utenteInModifica ? 'Modifica Utente' : 'Nuovo Utente' ?></div>
                 <div class="card-body">
                     <form method="post" class="row g-3">
+                        <input type="hidden" name="azione" value="<?= $utenteInModifica ? 'modifica' : 'crea' ?>">
+                        <?php if ($utenteInModifica): ?>
+                            <input type="hidden" name="id_utente" value="<?= (int)$utenteInModifica['id'] ?>">
+                        <?php endif; ?>
+
                         <div class="col-md-4">
                             <label class="form-label" for="nome_utente">Nome Utente *</label>
-                            <input class="form-control" id="nome_utente" name="nome_utente" required>
+                            <input class="form-control" id="nome_utente" name="nome_utente" value="<?= htmlspecialchars($utenteInModifica['nome_utente'] ?? '') ?>" required>
                         </div>
                         <div class="col-md-4">
                             <label class="form-label" for="nome">Nome *</label>
-                            <input class="form-control" id="nome" name="nome" required>
+                            <input class="form-control" id="nome" name="nome" value="<?= htmlspecialchars($utenteInModifica['nome'] ?? '') ?>" required>
                         </div>
                         <div class="col-md-4">
                             <label class="form-label" for="cognome">Cognome *</label>
-                            <input class="form-control" id="cognome" name="cognome" required>
+                            <input class="form-control" id="cognome" name="cognome" value="<?= htmlspecialchars($utenteInModifica['cognome'] ?? '') ?>" required>
                         </div>
                         <div class="col-md-4">
                             <label class="form-label" for="telefono">Telefono</label>
-                            <input class="form-control" id="telefono" name="telefono">
+                            <input class="form-control" id="telefono" name="telefono" value="<?= htmlspecialchars($utenteInModifica['telefono'] ?? '') ?>">
                         </div>
                         <div class="col-md-4">
                             <label class="form-label" for="email">Email *</label>
-                            <input type="email" class="form-control" id="email" name="email" required>
+                            <input type="email" class="form-control" id="email" name="email" value="<?= htmlspecialchars($utenteInModifica['email'] ?? '') ?>" required>
                         </div>
                         <div class="col-md-4">
-                            <label class="form-label" for="password">Password *</label>
-                            <input type="password" class="form-control" id="password" name="password" minlength="8" required>
+                            <label class="form-label" for="password">Password <?= $utenteInModifica ? '' : '*' ?></label>
+                            <input type="password" class="form-control" id="password" name="password" minlength="8" <?= $utenteInModifica ? '' : 'required' ?>>
+                            <?php if ($utenteInModifica): ?>
+                                <small class="text-muted">Lascia vuoto per non modificare la password.</small>
+                            <?php endif; ?>
                         </div>
                         <div class="col-md-2">
                             <label class="form-label" for="ruolo">Ruolo</label>
@@ -162,12 +238,15 @@ renderHeader('Simplex - Utenti');
                         </div>
                         <div class="col-md-2 d-flex align-items-end">
                             <div class="form-check form-switch">
-                                <input class="form-check-input" type="checkbox" id="attivo" name="attivo" checked>
+                                <input class="form-check-input" type="checkbox" id="attivo" name="attivo" <?= isset($utenteInModifica) ? (((int)($utenteInModifica['attivo'] ?? 0) === 1) ? 'checked' : '') : 'checked' ?>>
                                 <label class="form-check-label" for="attivo">Attivo</label>
                             </div>
                         </div>
-                        <div class="col-12">
-                            <button class="btn btn-primary" type="submit">Salva Utente</button>
+                        <div class="col-12 d-flex gap-2">
+                            <button class="btn btn-primary" type="submit"><?= $utenteInModifica ? 'Aggiorna Utente' : 'Salva Utente' ?></button>
+                            <?php if ($utenteInModifica): ?>
+                                <a class="btn btn-outline-secondary" href="utenti.php">Annulla modifica</a>
+                            <?php endif; ?>
                         </div>
                     </form>
                 </div>
@@ -186,11 +265,12 @@ renderHeader('Simplex - Utenti');
                             <th>Email</th>
                             <th>Ruolo</th>
                             <th>Stato</th>
+                            <th>Azioni</th>
                         </tr>
                         </thead>
                         <tbody>
                         <?php if (!$utenti): ?>
-                            <tr><td colspan="7" class="text-center text-muted py-4">Nessun utente inserito.</td></tr>
+                            <tr><td colspan="8" class="text-center text-muted py-4">Nessun utente inserito.</td></tr>
                         <?php endif; ?>
                         <?php foreach ($utenti as $utente): ?>
                             <tr>
@@ -206,6 +286,9 @@ renderHeader('Simplex - Utenti');
                                     <?php else: ?>
                                         <span class="badge text-bg-secondary">Disattivo</span>
                                     <?php endif; ?>
+                                </td>
+                                <td>
+                                    <a class="btn btn-sm btn-outline-primary" href="utenti.php?edit=<?= (int)$utente['id'] ?>">Modifica</a>
                                 </td>
                             </tr>
                         <?php endforeach; ?>
