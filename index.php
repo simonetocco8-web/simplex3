@@ -1,3 +1,3 @@
 <?php
-header('Location: utenti.php');
+header('Location: login.php');
 exit;
