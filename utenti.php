@@ -162,7 +162,7 @@ renderHeader('Simplex - Utenti');
             <h1 class="h4 text-white mb-4">Simplex</h1>
             <ul class="nav nav-pills flex-column gap-2 mb-3">
                 <li class="nav-item"><a class="nav-link active" href="utenti.php">Utenti</a></li>
-                <li class="nav-item"><a class="nav-link disabled" href="#">Ruoli</a></li>
+                <li class="nav-item"><a class="nav-link" href="aziende.php">Aziende</a></li>
                 <li class="nav-item"><a class="nav-link disabled" href="#">Impostazioni</a></li>
             </ul>
 
