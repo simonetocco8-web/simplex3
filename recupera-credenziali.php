@@ -14,8 +14,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     if (!$errors) {
-        $stmt = $pdo->prepare('SELECT id, nome_utente, email, attivo FROM utenti WHERE nome_utente = :identifier OR email = :identifier LIMIT 1');
-        $stmt->execute([':identifier' => $identifier]);
+        $stmt = $pdo->prepare('SELECT id, nome_utente, email, attivo FROM utenti WHERE nome_utente = :nome_utente OR email = :email LIMIT 1');
+        $stmt->execute([':nome_utente' => $identifier, ':email' => $identifier]);
         $utente = $stmt->fetch();
 
         if (!$utente) {
