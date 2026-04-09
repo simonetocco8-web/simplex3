@@ -211,6 +211,7 @@ renderHeader('Simplex - Utenti');
         <nav class="col-12 col-md-3 col-lg-2 sidebar p-3">
             <h1 class="h4 text-white mb-4">Simplex</h1>
             <ul class="nav nav-pills flex-column gap-2 mb-3">
+                <li class="nav-item"><a class="nav-link" href="bacheca.php">Bacheca</a></li>
                 <li class="nav-item"><a class="nav-link active" href="utenti.php">Utenti</a></li>
                 <li class="nav-item"><a class="nav-link" href="aziende.php">Aziende</a></li>
                 <li class="nav-item"><a class="nav-link" href="offerte.php">Offerte</a></li>
