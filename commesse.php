@@ -24,6 +24,17 @@ $pdo->exec("CREATE TABLE IF NOT EXISTS commesse (
     UNIQUE KEY uq_commesse_num_anno (protocollo_numero, anno_riferimento)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
 
+$pdo->exec("CREATE TABLE IF NOT EXISTS commesse_file (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    commessa_id INT UNSIGNED NOT NULL,
+    nome_originale VARCHAR(255) NOT NULL,
+    nome_salvato VARCHAR(255) NOT NULL,
+    mime_type VARCHAR(100) NULL,
+    dimensione_bytes BIGINT UNSIGNED NOT NULL DEFAULT 0,
+    caricato_il TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_commessa_file_commessa FOREIGN KEY (commessa_id) REFERENCES commesse(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+
 $migrations = [
     'data_rali' => 'ALTER TABLE commesse ADD COLUMN data_rali DATE NULL AFTER consulente_nome',
     'dtg_utente_id' => 'ALTER TABLE commesse ADD COLUMN dtg_utente_id INT UNSIGNED NULL AFTER data_rali',
@@ -47,6 +58,7 @@ $errors = [];
 $success = null;
 $editId = isset($_GET['edit']) ? (int) $_GET['edit'] : 0;
 $commessaInModifica = null;
+$filesCommessa = [];
 
 if ($editId > 0) {
     $stmtEdit = $pdo->prepare('SELECT * FROM commesse WHERE id = :id');
@@ -72,11 +84,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($id <= 0) {
             $errors[] = 'ID commessa non valido.';
         }
-
         if ($dataRali !== '' && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $dataRali)) {
             $errors[] = 'Data R.A.L.I non valida.';
         }
-
         if ($budgetRaw !== '' && (!is_numeric($budgetRaw) || (float) $budgetRaw < 0)) {
             $errors[] = 'Budget non valido.';
         }
@@ -99,9 +109,64 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             ]);
 
             $success = 'Commessa aggiornata correttamente.';
-            $editId = 0;
-            $commessaInModifica = null;
+            $editId = $id;
         }
+    }
+
+    if ($azione === 'upload_file') {
+        $id = (int) ($_POST['id'] ?? 0);
+        if ($id <= 0) {
+            $errors[] = 'Commessa non valida per upload file.';
+        } elseif (!isset($_FILES['allegato']) || !is_array($_FILES['allegato'])) {
+            $errors[] = 'Nessun file ricevuto.';
+        } else {
+            $file = $_FILES['allegato'];
+            if ((int) ($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
+                $errors[] = 'Errore durante il caricamento del file.';
+            } else {
+                $uploadBase = __DIR__ . '/uploads/commesse/' . $id;
+                if (!is_dir($uploadBase) && !mkdir($uploadBase, 0775, true) && !is_dir($uploadBase)) {
+                    $errors[] = 'Impossibile creare la cartella di upload.';
+                } else {
+                    $originalName = basename((string) $file['name']);
+                    $ext = pathinfo($originalName, PATHINFO_EXTENSION);
+                    $storedName = uniqid('file_', true) . ($ext ? '.' . $ext : '');
+                    $target = $uploadBase . '/' . $storedName;
+
+                    if (!move_uploaded_file((string) $file['tmp_name'], $target)) {
+                        $errors[] = 'Impossibile salvare il file sul server.';
+                    } else {
+                        $mime = function_exists('mime_content_type') ? mime_content_type($target) : null;
+                        $size = filesize($target);
+                        $stmtIns = $pdo->prepare(
+                            'INSERT INTO commesse_file (commessa_id, nome_originale, nome_salvato, mime_type, dimensione_bytes)
+                             VALUES (:commessa_id, :nome_originale, :nome_salvato, :mime_type, :dimensione_bytes)'
+                        );
+                        $stmtIns->execute([
+                            ':commessa_id' => $id,
+                            ':nome_originale' => $originalName,
+                            ':nome_salvato' => $storedName,
+                            ':mime_type' => $mime,
+                            ':dimensione_bytes' => (int) $size,
+                        ]);
+                        $success = 'File caricato correttamente.';
+                        $editId = $id;
+                    }
+                }
+            }
+        }
+    }
+}
+
+if ($editId > 0) {
+    $stmtEdit = $pdo->prepare('SELECT * FROM commesse WHERE id = :id');
+    $stmtEdit->execute([':id' => $editId]);
+    $commessaInModifica = $stmtEdit->fetch();
+
+    if ($commessaInModifica) {
+        $stmtFiles = $pdo->prepare('SELECT * FROM commesse_file WHERE commessa_id = :commessa_id ORDER BY caricato_il DESC');
+        $stmtFiles->execute([':commessa_id' => $editId]);
+        $filesCommessa = $stmtFiles->fetchAll();
     }
 }
 
@@ -229,6 +294,53 @@ renderHeader('Simplex - Commesse');
                                 <a class="btn btn-outline-secondary" href="commesse.php">Annulla</a>
                             </div>
                         </form>
+                    </div>
+                </div>
+
+                <div class="card mb-4">
+                    <div class="card-header">File della commessa</div>
+                    <div class="card-body">
+                        <form method="post" enctype="multipart/form-data" class="row g-2 mb-3">
+                            <input type="hidden" name="azione" value="upload_file">
+                            <input type="hidden" name="id" value="<?= (int)$commessaInModifica['id'] ?>">
+                            <div class="col-md-9">
+                                <input type="file" class="form-control" name="allegato" required>
+                            </div>
+                            <div class="col-md-3 d-grid">
+                                <button class="btn btn-outline-primary" type="submit">Carica file</button>
+                            </div>
+                        </form>
+
+                        <div class="table-responsive">
+                            <table class="table table-sm table-striped align-middle mb-0">
+                                <thead>
+                                <tr>
+                                    <th>Nome file</th>
+                                    <th>Tipo</th>
+                                    <th>Dimensione</th>
+                                    <th>Caricato il</th>
+                                    <th>Azioni</th>
+                                </tr>
+                                </thead>
+                                <tbody>
+                                <?php if (!$filesCommessa): ?>
+                                    <tr><td colspan="5" class="text-center text-muted py-3">Nessun file caricato.</td></tr>
+                                <?php endif; ?>
+                                <?php foreach ($filesCommessa as $file): ?>
+                                    <tr>
+                                        <td><?= htmlspecialchars($file['nome_originale']) ?></td>
+                                        <td><?= htmlspecialchars($file['mime_type'] ?? '-') ?></td>
+                                        <td><?= htmlspecialchars((string)$file['dimensione_bytes']) ?> bytes</td>
+                                        <td><?= htmlspecialchars($file['caricato_il']) ?></td>
+                                        <td>
+                                            <a class="btn btn-sm btn-outline-secondary" href="download_commessa_file.php?id=<?= (int)$file['id'] ?>&mode=view" target="_blank">Visualizza</a>
+                                            <a class="btn btn-sm btn-outline-primary" href="download_commessa_file.php?id=<?= (int)$file['id'] ?>&mode=download">Scarica</a>
+                                        </td>
+                                    </tr>
+                                <?php endforeach; ?>
+                                </tbody>
+                            </table>
+                        </div>
                     </div>
                 </div>
             <?php endif; ?>
