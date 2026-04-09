@@ -130,7 +130,7 @@ renderHeader('Simplex - Commesse');
                                 <td><?= htmlspecialchars($commessa['protocollo']) ?></td>
                                 <td><?= htmlspecialchars((string)$commessa['anno_riferimento']) ?></td>
                                 <td><?= htmlspecialchars($commessa['consulente_nome']) ?></td>
-                                <td><?= htmlspecialchars($commessa['offerta_protocollo'] ?? '-') ?></td>
+                                <td><?php if (!empty($commessa['offerta_id'])): ?><a href="offerte.php?view=<?= (int)$commessa['offerta_id'] ?>"><?= htmlspecialchars($commessa['offerta_protocollo'] ?? '-') ?></a><?php else: ?>-<?php endif; ?></td>
                                 <td><?= htmlspecialchars($commessa['offerta_servizio'] ?? '-') ?></td>
                                 <td><?= htmlspecialchars($commessa['offerta_stato'] ?? '-') ?></td>
                             </tr>
