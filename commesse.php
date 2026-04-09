@@ -314,6 +314,7 @@ renderHeader('Simplex - Commesse');
                 <li class="nav-item"><a class="nav-link" href="aziende.php">Aziende</a></li>
                 <li class="nav-item"><a class="nav-link" href="offerte.php">Offerte</a></li>
                 <li class="nav-item"><a class="nav-link active" href="commesse.php">Commesse</a></li>
+                <li class="nav-item"><a class="nav-link" href="amministrazione_produzione.php">Amministrazione</a></li>
                 <li class="nav-item"><a class="nav-link disabled" href="#">Impostazioni</a></li>
             </ul>
             <?php if ($utenteLoggato): ?>
