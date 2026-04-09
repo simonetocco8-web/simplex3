@@ -218,6 +218,8 @@ renderHeader('Simplex - Utenti');
                 <li class="nav-item"><a class="nav-link" href="offerte.php">Offerte</a></li>
                 <li class="nav-item"><a class="nav-link" href="commesse.php">Commesse</a></li>
                 <li class="nav-item"><a class="nav-link" href="amministrazione_produzione.php">Amministrazione</a></li>
+                <li class="nav-item"><a class="nav-link" href="fatture.php">Fatture</a></li>
+                <li class="nav-item"><a class="nav-link" href="pagamenti.php">Pagamenti</a></li>
                 <li class="nav-item"><a class="nav-link disabled" href="#">Impostazioni</a></li>
             </ul>
 

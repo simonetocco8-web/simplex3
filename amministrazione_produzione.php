@@ -109,6 +109,8 @@ renderHeader('Simplex - Amministrazione / Produzione');
                 <li class="nav-item"><a class="nav-link" href="commesse.php">Commesse</a></li>
                 <li class="nav-item mt-2 text-uppercase small text-light-emphasis px-2">Amministrazione</li>
                 <li class="nav-item"><a class="nav-link active" href="amministrazione_produzione.php">Produzione</a></li>
+                <li class="nav-item"><a class="nav-link" href="fatture.php">Fatture</a></li>
+                <li class="nav-item"><a class="nav-link" href="pagamenti.php">Pagamenti</a></li>
                 <li class="nav-item"><a class="nav-link disabled" href="#">Impostazioni</a></li>
             </ul>
             <?php if ($utenteLoggato): ?>

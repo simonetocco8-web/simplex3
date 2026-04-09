@@ -52,6 +52,28 @@ $pdo->exec("CREATE TABLE IF NOT EXISTS commessa_momenti_lavorazione (
     CONSTRAINT fk_momento_commessa FOREIGN KEY (commessa_id) REFERENCES commesse(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
 
+$pdo->exec("CREATE TABLE IF NOT EXISTS fatture (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    commessa_id INT UNSIGNED NOT NULL,
+    momento_id INT UNSIGNED NOT NULL UNIQUE,
+    numero VARCHAR(30) NOT NULL UNIQUE,
+    anno_riferimento YEAR NOT NULL,
+    importo DECIMAL(12,2) NOT NULL,
+    pagata TINYINT(1) NOT NULL DEFAULT 0,
+    creata_il TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_fattura_commessa FOREIGN KEY (commessa_id) REFERENCES commesse(id) ON DELETE CASCADE,
+    CONSTRAINT fk_fattura_momento FOREIGN KEY (momento_id) REFERENCES commessa_momenti_lavorazione(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+
+$pdo->exec("CREATE TABLE IF NOT EXISTS pagamenti (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    fattura_id INT UNSIGNED NOT NULL UNIQUE,
+    data_pagamento DATE NOT NULL,
+    modalita_pagamento ENUM('Contanti', 'Bonifico', 'Carta di Credito') NOT NULL,
+    creato_il TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_pagamento_fattura FOREIGN KEY (fattura_id) REFERENCES fatture(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+
 $migrations = [
     'data_rali' => 'ALTER TABLE commesse ADD COLUMN data_rali DATE NULL AFTER consulente_nome',
     'dtg_utente_id' => 'ALTER TABLE commesse ADD COLUMN dtg_utente_id INT UNSIGNED NULL AFTER data_rali',
@@ -84,6 +106,7 @@ $commessaInModifica = null;
 $filesCommessa = [];
 $momentiCommessa = [];
 $totaleMomentiEuro = 0.0;
+$fatturePerMomento = [];
 
 if ($editId > 0) {
     $stmtEdit = $pdo->prepare(
@@ -265,6 +288,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 ':ore_studio' => $oreStudio !== '' ? $oreStudio : null,
                 ':data_prevista' => $dataPrevista !== '' ? $dataPrevista : null,
             ]);
+            $momentoId = (int) $pdo->lastInsertId();
+
+            if ($tipologia === 'Chiusura') {
+                $valoreG = (float) $valore;
+                $oreM = (float) $ore;
+                $giorniM = (float) $giorni;
+                $giornateCalcolate = $giorniM > 0 ? $giorniM : ($oreM / 8);
+                $importoFattura = max(0, $valoreG * $giornateCalcolate);
+
+                $numeroFattura = $momentoId . '/' . date('Y');
+                $stmtFattura = $pdo->prepare(
+                    'INSERT INTO fatture (commessa_id, momento_id, numero, anno_riferimento, importo)
+                     VALUES (:commessa_id, :momento_id, :numero, :anno_riferimento, :importo)'
+                );
+                $stmtFattura->execute([
+                    ':commessa_id' => $id,
+                    ':momento_id' => $momentoId,
+                    ':numero' => $numeroFattura,
+                    ':anno_riferimento' => (int) date('Y'),
+                    ':importo' => number_format($importoFattura, 2, '.', ''),
+                ]);
+            }
+
             $success = 'Momento di lavorazione aggiunto.';
             $editId = $id;
         }
@@ -296,6 +342,12 @@ if ($editId > 0) {
             $giorniM = (float) $momento['giorni'];
             $giornateCalcolate = $giorniM > 0 ? $giorniM : ($oreM / 8);
             $totaleMomentiEuro += $valoreG * $giornateCalcolate;
+        }
+
+        $stmtFatture = $pdo->prepare('SELECT id, momento_id, numero FROM fatture WHERE commessa_id = :commessa_id');
+        $stmtFatture->execute([':commessa_id' => $editId]);
+        foreach ($stmtFatture->fetchAll() as $fattura) {
+            $fatturePerMomento[(int) $fattura['momento_id']] = $fattura;
         }
     }
 }
@@ -358,6 +410,8 @@ renderHeader('Simplex - Commesse');
                 <li class="nav-item"><a class="nav-link" href="offerte.php">Offerte</a></li>
                 <li class="nav-item"><a class="nav-link active" href="commesse.php">Commesse</a></li>
                 <li class="nav-item"><a class="nav-link" href="amministrazione_produzione.php">Amministrazione</a></li>
+                <li class="nav-item"><a class="nav-link" href="fatture.php">Fatture</a></li>
+                <li class="nav-item"><a class="nav-link" href="pagamenti.php">Pagamenti</a></li>
                 <li class="nav-item"><a class="nav-link disabled" href="#">Impostazioni</a></li>
             </ul>
             <?php if ($utenteLoggato): ?>
@@ -409,12 +463,12 @@ renderHeader('Simplex - Commesse');
                         <table class="table table-sm table-striped mb-0 align-middle">
                             <thead>
                                 <tr>
-                                    <th>Data</th><th>Tipologia</th><th>Valore Giornaliero Uomo (€)</th><th>Ore</th><th>Giorni</th><th># Incontri</th><th># ore di studio</th><th>Data Prevista</th>
+                                    <th>Data</th><th>Tipologia</th><th>Valore Giornaliero Uomo (€)</th><th>Ore</th><th>Giorni</th><th># Incontri</th><th># ore di studio</th><th>Data Prevista</th><th>Fattura</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 <?php if (!$momentiCommessa): ?>
-                                    <tr><td colspan="8" class="text-center text-muted py-3">Nessun momento inserito.</td></tr>
+                                    <tr><td colspan="9" class="text-center text-muted py-3">Nessun momento inserito.</td></tr>
                                 <?php endif; ?>
                                 <?php foreach ($momentiCommessa as $momento): ?>
                                     <tr>
@@ -426,6 +480,14 @@ renderHeader('Simplex - Commesse');
                                         <td><?= htmlspecialchars((string)$momento['numero_incontri']) ?></td>
                                         <td><?= htmlspecialchars($momento['ore_studio'] ?? '-') ?></td>
                                         <td><?= htmlspecialchars($momento['data_prevista'] ?? '-') ?></td>
+                                        <td>
+                                            <?php $fatturaMomento = $fatturePerMomento[(int) $momento['id']] ?? null; ?>
+                                            <?php if ($fatturaMomento): ?>
+                                                <a class="btn btn-sm btn-outline-success" title="Visualizza fattura" href="fatture.php?view=<?= (int) $fatturaMomento['id'] ?>">📄</a>
+                                            <?php else: ?>
+                                                -
+                                            <?php endif; ?>
+                                        </td>
                                     </tr>
                                 <?php endforeach; ?>
                             </tbody>
