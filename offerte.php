@@ -7,14 +7,6 @@ $SERVIZI = [
     'SISTEMI DI GESTIONE AZIENDALE', 'SICUREZZA', 'FORMAZIONE', 'FINANZA AGEVOLATA', 'CONSULENZA SOA', 'ALTRE CONSULENZE',
 ];
 $STATI_OFFERTA = ['Generata', 'Inviata', 'Aggiudicata', 'Scaduta'];
-$CONSULENTI = [
-    'GD' => 'GD Giovanni Di Tommaso',
-    'SM' => 'SM Salvatore Marzano',
-    'FI' => 'FI Francesco Iannello',
-    'PC' => 'PC Paola Cutruzzulà',
-    'DP' => 'DP Domenico Pronestì',
-    'FD' => 'FD Francesco Di Bella',
-];
 
 $DETTAGLI_SERVIZIO = [
     'SISTEMI DI GESTIONE AZIENDALE' => ['ISO 9001','MANT ISO 9001','ISO 14001','MANT ISO 14001','EMAS','MANTENIMENTO EMAS','ISO 45001','MANT ISO 45001','SA 8000','MANT SA8000','ISO 50000','MANT ISO 50000','ISO 27001','MANT ISO 27001','ISO 27017','MANT ISO 27017','ISO 27018','MANT ISO 27018','ISO 42000','MANT ISO 42000','ISO 37001','MANT ISO 37001','ISO 39001','MANT 39001','ISO 22000','MANT ISO 22000','ISO 22005','MANT ISO 22005','ISO 1090','MANT ISO 1090','SISTEMA INTEGRATO','MANTENIMENTO SISTEMA INTEGRATO','HALAL','MANTENIMENTO HALAL','GLOBAL GAP','MANTENIMENTO GLOBAL GAP','BIOLOGICO','MANTENIMENTO BIOLOGICO','MARC CE','FPC CLS','MANTENIMENTO FPC CLS','MANTENIMENTO MAR CE','BRC','MANTENIMENTO BRC AEO','Parità di genere','MANTENIMENTO Parità di genere','MODELLO 231','ODV 231','PRIVACY (GDPR)','HACCP','MANT HACCP','ANALISI TAMPONE HACCP'],
@@ -114,6 +106,23 @@ $migrations=[
 foreach($migrations as $col=>$sql){ if(!(bool)$pdo->query("SHOW COLUMNS FROM offerte LIKE '{$col}'")->fetch()){ $pdo->exec($sql);} }
 
 $utenti = $pdo->query('SELECT id, nome, cognome FROM utenti ORDER BY nome, cognome')->fetchAll();
+$CONSULENTI = [];
+if ((bool)$pdo->query("SHOW TABLES LIKE 'utenti_ruoli'")->fetchColumn()) {
+    $consRows = $pdo->query("SELECT DISTINCT u.nome, u.cognome
+                             FROM utenti u
+                             INNER JOIN utenti_ruoli ur ON ur.utente_id = u.id
+                             WHERE ur.ruolo = 'Consulente' AND u.attivo = 1
+                             ORDER BY u.nome, u.cognome")->fetchAll();
+} else {
+    $consRows = $pdo->query("SELECT nome, cognome FROM utenti WHERE ruolo = 'Consulente' AND attivo = 1 ORDER BY nome, cognome")->fetchAll();
+}
+foreach ($consRows as $r) {
+    $nomeCons = trim(($r['nome'] ?? '') . ' ' . ($r['cognome'] ?? ''));
+    if ($nomeCons !== '') {
+        $CONSULENTI[] = $nomeCons;
+    }
+}
+
 $aziendePromotori = [];
 if ((bool)$pdo->query("SHOW TABLES LIKE 'aziende'")->fetchColumn()) {
     $aziendePromotori = $pdo->query("SELECT id, ragione_sociale FROM aziende WHERE FIND_IN_SET('Promotore', tipologia_azienda) > 0 ORDER BY ragione_sociale")->fetchAll();
