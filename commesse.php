@@ -404,14 +404,31 @@ renderHeader('Simplex - Commesse');
             <h1 class="h4 text-white mb-4">Simplex</h1>
             <ul class="nav nav-pills flex-column gap-2 mb-3">
                 <li class="nav-item"><a class="nav-link" href="bacheca.php">Bacheca</a></li>
-                <li class="nav-item"><a class="nav-link" href="utenti.php">Utenti</a></li>
-                <li class="nav-item"><a class="nav-link" href="aziende.php">Aziende</a></li>
-                <li class="nav-item"><a class="nav-link" href="enti_certificazione.php">Enti di Certificazione</a></li>
                 <li class="nav-item"><a class="nav-link" href="offerte.php">Offerte</a></li>
-                <li class="nav-item"><a class="nav-link active" href="commesse.php">Commesse</a></li>
-                <li class="nav-item"><a class="nav-link" href="amministrazione_produzione.php">Amministrazione</a></li>
-                <li class="nav-item"><a class="nav-link" href="fatture.php">Fatture</a></li>
-                <li class="nav-item"><a class="nav-link" href="pagamenti.php">Pagamenti</a></li>
+                <li class="nav-item"><a class="nav-link" href="commesse.php">Commesse</a></li>
+
+                <li class="nav-item">
+                    <a class="nav-link d-flex justify-content-between align-items-center" data-bs-toggle="collapse" href="#menuAnagrafiche" role="button" aria-expanded="false" aria-controls="menuAnagrafiche">
+                        <span>Anagrafiche</span><span>▾</span>
+                    </a>
+                    <ul class="nav flex-column ms-3 collapse" id="menuAnagrafiche">
+                        <li class="nav-item"><a class="nav-link" href="utenti.php">Utenti</a></li>
+                        <li class="nav-item"><a class="nav-link" href="aziende.php">Aziende</a></li>
+                        <li class="nav-item"><a class="nav-link" href="enti_certificazione.php">Enti di Certificazione</a></li>
+                    </ul>
+                </li>
+
+                <li class="nav-item">
+                    <a class="nav-link d-flex justify-content-between align-items-center" data-bs-toggle="collapse" href="#menuAmministrazione" role="button" aria-expanded="false" aria-controls="menuAmministrazione">
+                        <span>Amministrazione</span><span>▾</span>
+                    </a>
+                    <ul class="nav flex-column ms-3 collapse" id="menuAmministrazione">
+                        <li class="nav-item"><a class="nav-link" href="amministrazione_produzione.php">Produzione</a></li>
+                        <li class="nav-item"><a class="nav-link" href="fatture.php">Fatture</a></li>
+                        <li class="nav-item"><a class="nav-link" href="pagamenti.php">Pagamenti</a></li>
+                    </ul>
+                </li>
+
                 <li class="nav-item"><a class="nav-link disabled" href="#">Impostazioni</a></li>
             </ul>
             <?php if ($utenteLoggato): ?>
