@@ -312,6 +312,7 @@ renderHeader('Simplex - Commesse');
                 <li class="nav-item"><a class="nav-link" href="bacheca.php">Bacheca</a></li>
                 <li class="nav-item"><a class="nav-link" href="utenti.php">Utenti</a></li>
                 <li class="nav-item"><a class="nav-link" href="aziende.php">Aziende</a></li>
+                <li class="nav-item"><a class="nav-link" href="enti_certificazione.php">Enti di Certificazione</a></li>
                 <li class="nav-item"><a class="nav-link" href="offerte.php">Offerte</a></li>
                 <li class="nav-item"><a class="nav-link active" href="commesse.php">Commesse</a></li>
                 <li class="nav-item"><a class="nav-link" href="amministrazione_produzione.php">Amministrazione</a></li>
