@@ -640,6 +640,7 @@ renderHeader('Simplex - Offerte');
                                     <div class="d-flex gap-1">
                                         <a class="btn btn-sm btn-outline-secondary" href="offerte.php?view=<?= (int)$offerta['id'] ?>">Visualizza</a>
                                         <a class="btn btn-sm btn-outline-primary" href="offerte.php?edit=<?= (int)$offerta['id'] ?>">Modifica</a>
+                                        <a class="btn btn-sm btn-outline-dark" href="lavorazioni.php?offerta_id=<?= (int)$offerta['id'] ?>">Lavorazioni</a>
                                         <form method="post" onsubmit="return confirm('Confermi eliminazione offerta?');">
                                             <input type="hidden" name="azione" value="delete">
                                             <input type="hidden" name="id" value="<?= (int)$offerta['id'] ?>">
