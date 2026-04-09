@@ -19,6 +19,8 @@ $pdo->exec("CREATE TABLE IF NOT EXISTS commesse (
     data_rali DATE NULL,
     dtg_utente_id INT UNSIGNED NULL,
     budget DECIMAL(12,2) NULL,
+    ente_certificazione_id INT UNSIGNED NULL,
+    importo_ente_certificazione DECIMAL(12,2) NULL,
     azienda_cliente_id INT UNSIGNED NULL,
     creata_il TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     UNIQUE KEY uq_commesse_num_anno (protocollo_numero, anno_riferimento)
@@ -54,7 +56,9 @@ $migrations = [
     'data_rali' => 'ALTER TABLE commesse ADD COLUMN data_rali DATE NULL AFTER consulente_nome',
     'dtg_utente_id' => 'ALTER TABLE commesse ADD COLUMN dtg_utente_id INT UNSIGNED NULL AFTER data_rali',
     'budget' => 'ALTER TABLE commesse ADD COLUMN budget DECIMAL(12,2) NULL AFTER dtg_utente_id',
-    'azienda_cliente_id' => 'ALTER TABLE commesse ADD COLUMN azienda_cliente_id INT UNSIGNED NULL AFTER budget',
+    'ente_certificazione_id' => 'ALTER TABLE commesse ADD COLUMN ente_certificazione_id INT UNSIGNED NULL AFTER budget',
+    'importo_ente_certificazione' => 'ALTER TABLE commesse ADD COLUMN importo_ente_certificazione DECIMAL(12,2) NULL AFTER ente_certificazione_id',
+    'azienda_cliente_id' => 'ALTER TABLE commesse ADD COLUMN azienda_cliente_id INT UNSIGNED NULL AFTER importo_ente_certificazione',
 ];
 foreach ($migrations as $column => $sqlAlter) {
     $exists = (bool) $pdo->query("SHOW COLUMNS FROM commesse LIKE '{$column}'")->fetch();
@@ -68,6 +72,10 @@ $aziende = [];
 if ((bool) $pdo->query("SHOW TABLES LIKE 'aziende'")->fetchColumn()) {
     $aziende = $pdo->query('SELECT id, ragione_sociale FROM aziende ORDER BY ragione_sociale')->fetchAll();
 }
+$entiCertificazione = [];
+if ((bool) $pdo->query("SHOW TABLES LIKE 'enti_certificazione'")->fetchColumn()) {
+    $entiCertificazione = $pdo->query('SELECT id, denominazione FROM enti_certificazione ORDER BY denominazione')->fetchAll();
+}
 
 $errors = [];
 $success = null;
@@ -78,7 +86,12 @@ $momentiCommessa = [];
 $totaleMomentiEuro = 0.0;
 
 if ($editId > 0) {
-    $stmtEdit = $pdo->prepare('SELECT * FROM commesse WHERE id = :id');
+    $stmtEdit = $pdo->prepare(
+        'SELECT c.*, o.servizio AS offerta_servizio
+         FROM commesse c
+         LEFT JOIN offerte o ON o.id = c.offerta_id
+         WHERE c.id = :id'
+    );
     $stmtEdit->execute([':id' => $editId]);
     $commessaInModifica = $stmtEdit->fetch();
 
@@ -96,7 +109,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $dataRali = trim($_POST['data_rali'] ?? '');
         $dtgUtenteId = ($_POST['dtg_utente_id'] ?? '') !== '' ? (int) $_POST['dtg_utente_id'] : null;
         $budgetRaw = str_replace(',', '.', trim($_POST['budget'] ?? ''));
+        $enteCertificazioneId = ($_POST['ente_certificazione_id'] ?? '') !== '' ? (int) $_POST['ente_certificazione_id'] : null;
+        $importoEnteRaw = str_replace(',', '.', trim($_POST['importo_ente_certificazione'] ?? ''));
         $aziendaClienteId = ($_POST['azienda_cliente_id'] ?? '') !== '' ? (int) $_POST['azienda_cliente_id'] : null;
+        $offertaServizio = '';
+
+        if ($id > 0) {
+            $stmtServizio = $pdo->prepare('SELECT o.servizio FROM commesse c LEFT JOIN offerte o ON o.id = c.offerta_id WHERE c.id = :id');
+            $stmtServizio->execute([':id' => $id]);
+            $offertaServizio = (string) ($stmtServizio->fetchColumn() ?: '');
+        }
+        $isSistemiGestioneAziendale = $offertaServizio === 'SISTEMI DI GESTIONE AZIENDALE';
 
         if ($id <= 0) {
             $errors[] = 'ID commessa non valido.';
@@ -107,6 +130,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($budgetRaw !== '' && (!is_numeric($budgetRaw) || (float) $budgetRaw < 0)) {
             $errors[] = 'Budget non valido.';
         }
+        if ($isSistemiGestioneAziendale && $enteCertificazioneId === null) {
+            $errors[] = 'Per commesse da offerta "SISTEMI DI GESTIONE AZIENDALE" è obbligatorio selezionare l\'Ente di Certificazione.';
+        }
+        if ($isSistemiGestioneAziendale && ($importoEnteRaw === '' || !is_numeric($importoEnteRaw) || (float) $importoEnteRaw < 0)) {
+            $errors[] = 'Per commesse da offerta "SISTEMI DI GESTIONE AZIENDALE" l\'Importo dell\'Ente di Certificazione è obbligatorio e deve essere valido.';
+        }
+        if (!$isSistemiGestioneAziendale) {
+            $enteCertificazioneId = null;
+            $importoEnteRaw = '';
+        }
 
         if (!$errors) {
             $stmtSave = $pdo->prepare(
@@ -114,6 +147,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                  SET data_rali = :data_rali,
                      dtg_utente_id = :dtg_utente_id,
                      budget = :budget,
+                     ente_certificazione_id = :ente_certificazione_id,
+                     importo_ente_certificazione = :importo_ente_certificazione,
                      azienda_cliente_id = :azienda_cliente_id
                  WHERE id = :id'
             );
@@ -121,6 +156,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 ':data_rali' => $dataRali !== '' ? $dataRali : null,
                 ':dtg_utente_id' => $dtgUtenteId,
                 ':budget' => $budgetRaw !== '' ? number_format((float) $budgetRaw, 2, '.', '') : null,
+                ':ente_certificazione_id' => $enteCertificazioneId,
+                ':importo_ente_certificazione' => $importoEnteRaw !== '' ? number_format((float) $importoEnteRaw, 2, '.', '') : null,
                 ':azienda_cliente_id' => $aziendaClienteId,
                 ':id' => $id,
             ]);
@@ -235,7 +272,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 if ($editId > 0) {
-    $stmtEdit = $pdo->prepare('SELECT * FROM commesse WHERE id = :id');
+    $stmtEdit = $pdo->prepare(
+        'SELECT c.*, o.servizio AS offerta_servizio
+         FROM commesse c
+         LEFT JOIN offerte o ON o.id = c.offerta_id
+         WHERE c.id = :id'
+    );
     $stmtEdit->execute([':id' => $editId]);
     $commessaInModifica = $stmtEdit->fetch();
 
@@ -351,6 +393,10 @@ renderHeader('Simplex - Commesse');
                             <div class="col-md-3"><label class="form-label">DTG</label><select class="form-select" name="dtg_utente_id"><option value="">-- Seleziona --</option><?php foreach ($utenti as $utente): ?><option value="<?= (int)$utente['id'] ?>" <?= ((int)($commessaInModifica['dtg_utente_id'] ?? 0) === (int)$utente['id']) ? 'selected' : '' ?>><?= htmlspecialchars($utente['nome'] . ' ' . $utente['cognome']) ?></option><?php endforeach; ?></select></div>
                             <div class="col-md-3"><label class="form-label">Budget (€)</label><input type="number" min="0" step="0.01" class="form-control" name="budget" value="<?= htmlspecialchars((string)($commessaInModifica['budget'] ?? '')) ?>"></div>
                             <div class="col-md-3"><label class="form-label">Ragione Sociale Cliente</label><select class="form-select" name="azienda_cliente_id"><option value="">-- Seleziona --</option><?php foreach ($aziende as $azienda): ?><option value="<?= (int)$azienda['id'] ?>" <?= ((int)($commessaInModifica['azienda_cliente_id'] ?? 0) === (int)$azienda['id']) ? 'selected' : '' ?>><?= htmlspecialchars($azienda['ragione_sociale']) ?></option><?php endforeach; ?></select></div>
+                            <?php if (($commessaInModifica['offerta_servizio'] ?? '') === 'SISTEMI DI GESTIONE AZIENDALE'): ?>
+                                <div class="col-md-6"><label class="form-label">Ente di Certificazione</label><select class="form-select" name="ente_certificazione_id"><option value="">-- Seleziona --</option><?php foreach ($entiCertificazione as $ente): ?><option value="<?= (int)$ente['id'] ?>" <?= ((int)($commessaInModifica['ente_certificazione_id'] ?? 0) === (int)$ente['id']) ? 'selected' : '' ?>><?= htmlspecialchars($ente['denominazione']) ?></option><?php endforeach; ?></select></div>
+                                <div class="col-md-6"><label class="form-label">Importo dell'Ente di Certificazione (€)</label><input type="number" min="0" step="0.01" class="form-control" name="importo_ente_certificazione" value="<?= htmlspecialchars((string)($commessaInModifica['importo_ente_certificazione'] ?? '')) ?>"></div>
+                            <?php endif; ?>
 
                             <div class="col-12 d-flex gap-2"><button class="btn btn-primary" type="submit">Salva modifica</button><a class="btn btn-outline-secondary" href="commesse.php">Annulla</a></div>
                         </form>
