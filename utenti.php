@@ -3,6 +3,8 @@ require_once __DIR__ . '/config/database.php';
 require_once __DIR__ . '/includes/layout.php';
 require_once __DIR__ . '/includes/auth.php';
 
+$RUOLI_DISPONIBILI = ['Amministratore', 'Responsabile di Area', 'Consulente'];
+
 $errors = [];
 $success = null;
 
@@ -14,10 +16,19 @@ $pdo->exec(
         cognome VARCHAR(50) NOT NULL,
         telefono VARCHAR(30) DEFAULT NULL,
         email VARCHAR(100) NOT NULL,
-        ruolo VARCHAR(30) NOT NULL DEFAULT 'amministratore',
+        ruolo VARCHAR(50) NOT NULL DEFAULT 'Amministratore',
         password_hash VARCHAR(255) NOT NULL,
         attivo TINYINT(1) NOT NULL DEFAULT 1,
         creato_il TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
+);
+
+$pdo->exec(
+    "CREATE TABLE IF NOT EXISTS utenti_ruoli (
+        utente_id INT UNSIGNED NOT NULL,
+        ruolo VARCHAR(50) NOT NULL,
+        PRIMARY KEY (utente_id, ruolo),
+        CONSTRAINT fk_utente_ruolo_utente FOREIGN KEY (utente_id) REFERENCES utenti(id) ON DELETE CASCADE
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
 );
 
@@ -25,6 +36,9 @@ $hasPasswordHashColumn = (bool) $pdo->query("SHOW COLUMNS FROM utenti LIKE 'pass
 if (!$hasPasswordHashColumn) {
     $pdo->exec("ALTER TABLE utenti ADD COLUMN password_hash VARCHAR(255) NULL AFTER ruolo");
 }
+
+// Backfill ruoli per utenti esistenti
+$pdo->exec("INSERT IGNORE INTO utenti_ruoli (utente_id, ruolo) SELECT id, ruolo FROM utenti");
 
 $totaleUtenti = (int) $pdo->query('SELECT COUNT(*) FROM utenti')->fetchColumn();
 if (!isLoggedIn() && $totaleUtenti > 0) {
@@ -34,13 +48,18 @@ if (!isLoggedIn() && $totaleUtenti > 0) {
 
 $editId = isset($_GET['edit']) ? (int) $_GET['edit'] : 0;
 $utenteInModifica = null;
+$ruoliUtenteInModifica = [];
 
 if ($editId > 0) {
-    $stmtEdit = $pdo->prepare('SELECT id, nome_utente, nome, cognome, telefono, email, ruolo, attivo FROM utenti WHERE id = :id LIMIT 1');
+    $stmtEdit = $pdo->prepare('SELECT id, nome_utente, nome, cognome, telefono, email, attivo FROM utenti WHERE id = :id LIMIT 1');
     $stmtEdit->execute([':id' => $editId]);
     $utenteInModifica = $stmtEdit->fetch();
 
-    if (!$utenteInModifica) {
+    if ($utenteInModifica) {
+        $stmtRuoli = $pdo->prepare('SELECT ruolo FROM utenti_ruoli WHERE utente_id = :utente_id');
+        $stmtRuoli->execute([':utente_id' => $editId]);
+        $ruoliUtenteInModifica = array_column($stmtRuoli->fetchAll(), 'ruolo');
+    } else {
         $errors[] = 'Utente da modificare non trovato.';
         $editId = 0;
     }
@@ -54,8 +73,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $telefono = trim($_POST['telefono'] ?? '');
     $email = trim($_POST['email'] ?? '');
     $password = $_POST['password'] ?? '';
-    $ruolo = 'amministratore';
+    $ruoliSelezionati = $_POST['ruoli'] ?? [];
     $attivo = isset($_POST['attivo']) ? 1 : 0;
+
+    if (!is_array($ruoliSelezionati)) {
+        $ruoliSelezionati = [];
+    }
+    $ruoliSelezionati = array_values(array_intersect($RUOLI_DISPONIBILI, $ruoliSelezionati));
 
     if ($nomeUtente === '' || $nome === '' || $cognome === '' || $email === '') {
         $errors[] = 'Compila tutti i campi obbligatori.';
@@ -63,6 +87,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if ($email !== '' && !filter_var($email, FILTER_VALIDATE_EMAIL)) {
         $errors[] = 'Inserisci una email valida.';
+    }
+
+    if (count($ruoliSelezionati) === 0) {
+        $errors[] = 'Seleziona almeno un ruolo.';
     }
 
     if ($azione === 'crea' && $password === '') {
@@ -74,6 +102,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     if (!$errors && $azione === 'crea') {
+        $ruoloPrincipale = $ruoliSelezionati[0];
+
         $stmt = $pdo->prepare(
             'INSERT INTO utenti (nome_utente, nome, cognome, telefono, email, ruolo, password_hash, attivo)
              VALUES (:nome_utente, :nome, :cognome, :telefono, :email, :ruolo, :password_hash, :attivo)'
@@ -86,14 +116,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 ':cognome' => $cognome,
                 ':telefono' => $telefono !== '' ? $telefono : null,
                 ':email' => $email,
-                ':ruolo' => $ruolo,
+                ':ruolo' => $ruoloPrincipale,
                 ':password_hash' => password_hash($password, PASSWORD_DEFAULT),
                 ':attivo' => $attivo,
             ]);
 
+            $utenteId = (int) $pdo->lastInsertId();
+            $stmtInsertRuolo = $pdo->prepare('INSERT INTO utenti_ruoli (utente_id, ruolo) VALUES (:utente_id, :ruolo)');
+            foreach ($ruoliSelezionati as $ruolo) {
+                $stmtInsertRuolo->execute([':utente_id' => $utenteId, ':ruolo' => $ruolo]);
+            }
+
             $success = 'Utente creato correttamente.';
         } catch (PDOException $e) {
-            if ((int) $e->errorInfo[1] === 1062) {
+            if ((int) ($e->errorInfo[1] ?? 0) === 1062) {
                 $errors[] = 'Nome Utente o Email già presente.';
             } else {
                 $errors[] = 'Errore durante il salvataggio dell\'utente.';
@@ -106,6 +142,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($idUtente <= 0) {
             $errors[] = 'ID utente non valido.';
         } else {
+            $ruoloPrincipale = $ruoliSelezionati[0];
             $params = [
                 ':id' => $idUtente,
                 ':nome_utente' => $nomeUtente,
@@ -113,7 +150,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 ':cognome' => $cognome,
                 ':telefono' => $telefono !== '' ? $telefono : null,
                 ':email' => $email,
-                ':ruolo' => $ruolo,
+                ':ruolo' => $ruoloPrincipale,
                 ':attivo' => $attivo,
             ];
 
@@ -133,15 +170,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             $sql .= ' WHERE id = :id';
 
-            $stmtUpd = $pdo->prepare($sql);
-
             try {
-                $stmtUpd->execute($params);
+                $pdo->prepare($sql)->execute($params);
+
+                $pdo->prepare('DELETE FROM utenti_ruoli WHERE utente_id = :utente_id')->execute([':utente_id' => $idUtente]);
+                $stmtInsertRuolo = $pdo->prepare('INSERT INTO utenti_ruoli (utente_id, ruolo) VALUES (:utente_id, :ruolo)');
+                foreach ($ruoliSelezionati as $ruolo) {
+                    $stmtInsertRuolo->execute([':utente_id' => $idUtente, ':ruolo' => $ruolo]);
+                }
+
                 $success = 'Utente aggiornato correttamente.';
                 $editId = 0;
                 $utenteInModifica = null;
+                $ruoliUtenteInModifica = [];
             } catch (PDOException $e) {
-                if ((int) $e->errorInfo[1] === 1062) {
+                if ((int) ($e->errorInfo[1] ?? 0) === 1062) {
                     $errors[] = 'Nome Utente o Email già presente.';
                 } else {
                     $errors[] = 'Errore durante l\'aggiornamento dell\'utente.';
@@ -152,7 +195,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 $utenteLoggato = currentUser();
-$utenti = $pdo->query('SELECT id, nome_utente, nome, cognome, telefono, email, ruolo, attivo, creato_il FROM utenti ORDER BY id DESC')->fetchAll();
+$utenti = $pdo->query(
+    "SELECT u.id, u.nome_utente, u.nome, u.cognome, u.telefono, u.email, u.attivo, u.creato_il,
+            GROUP_CONCAT(ur.ruolo ORDER BY ur.ruolo SEPARATOR ', ') AS ruoli
+     FROM utenti u
+     LEFT JOIN utenti_ruoli ur ON ur.utente_id = u.id
+     GROUP BY u.id
+     ORDER BY u.id DESC"
+)->fetchAll();
 
 renderHeader('Simplex - Utenti');
 ?>
@@ -234,16 +284,28 @@ renderHeader('Simplex - Utenti');
                                 <small class="text-muted">Lascia vuoto per non modificare la password.</small>
                             <?php endif; ?>
                         </div>
-                        <div class="col-md-2">
-                            <label class="form-label" for="ruolo">Ruolo</label>
-                            <input class="form-control" id="ruolo" value="Amministratore" readonly>
+
+                        <div class="col-md-10">
+                            <label class="form-label d-block">Ruoli *</label>
+                            <?php
+                            $ruoliChecked = $utenteInModifica ? $ruoliUtenteInModifica : ['Amministratore'];
+                            foreach ($RUOLI_DISPONIBILI as $ruolo):
+                                $idRuolo = 'ruolo_' . md5($ruolo);
+                            ?>
+                                <div class="form-check form-check-inline">
+                                    <input class="form-check-input" type="checkbox" id="<?= $idRuolo ?>" name="ruoli[]" value="<?= htmlspecialchars($ruolo) ?>" <?= in_array($ruolo, $ruoliChecked, true) ? 'checked' : '' ?>>
+                                    <label class="form-check-label" for="<?= $idRuolo ?>"><?= htmlspecialchars($ruolo) ?></label>
+                                </div>
+                            <?php endforeach; ?>
                         </div>
+
                         <div class="col-md-2 d-flex align-items-end">
                             <div class="form-check form-switch">
-                                <input class="form-check-input" type="checkbox" id="attivo" name="attivo" <?= isset($utenteInModifica) ? (((int)($utenteInModifica['attivo'] ?? 0) === 1) ? 'checked' : '') : 'checked' ?>>
+                                <input class="form-check-input" type="checkbox" id="attivo" name="attivo" <?= $utenteInModifica ? (((int)($utenteInModifica['attivo'] ?? 0) === 1) ? 'checked' : '') : 'checked' ?>>
                                 <label class="form-check-label" for="attivo">Attivo</label>
                             </div>
                         </div>
+
                         <div class="col-12 d-flex gap-2">
                             <button class="btn btn-primary" type="submit"><?= $utenteInModifica ? 'Aggiorna Utente' : 'Salva Utente' ?></button>
                             <?php if ($utenteInModifica): ?>
@@ -265,7 +327,7 @@ renderHeader('Simplex - Utenti');
                             <th>Cognome</th>
                             <th>Telefono</th>
                             <th>Email</th>
-                            <th>Ruolo</th>
+                            <th>Ruoli</th>
                             <th>Stato</th>
                             <th>Azioni</th>
                         </tr>
@@ -281,7 +343,13 @@ renderHeader('Simplex - Utenti');
                                 <td><?= htmlspecialchars($utente['cognome']) ?></td>
                                 <td><?= htmlspecialchars($utente['telefono'] ?? '-') ?></td>
                                 <td><?= htmlspecialchars($utente['email']) ?></td>
-                                <td><span class="badge text-bg-primary text-uppercase"><?= htmlspecialchars($utente['ruolo']) ?></span></td>
+                                <td>
+                                    <?php foreach (explode(', ', (string)($utente['ruoli'] ?? '')) as $ruolo): ?>
+                                        <?php if ($ruolo !== ''): ?>
+                                            <span class="badge text-bg-primary me-1"><?= htmlspecialchars($ruolo) ?></span>
+                                        <?php endif; ?>
+                                    <?php endforeach; ?>
+                                </td>
                                 <td>
                                     <?php if ((int)$utente['attivo'] === 1): ?>
                                         <span class="badge text-bg-success">Attivo</span>
