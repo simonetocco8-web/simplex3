@@ -6,7 +6,7 @@ require_once __DIR__ . '/includes/auth.php';
 $SERVIZI = [
     'SISTEMI DI GESTIONE AZIENDALE', 'SICUREZZA', 'FORMAZIONE', 'FINANZA AGEVOLATA', 'CONSULENZA SOA', 'ALTRE CONSULENZE',
 ];
-$STATI_OFFERTA = ['Generata', 'Inviata', 'Aggiudicata', 'Scaduta'];
+$STATI_OFFERTA = ['In Lavorazione', 'Inviata', 'Aggiudicata', 'Scaduta'];
 
 $DETTAGLI_SERVIZIO = [
     'SISTEMI DI GESTIONE AZIENDALE' => ['ISO 9001','MANT ISO 9001','ISO 14001','MANT ISO 14001','EMAS','MANTENIMENTO EMAS','ISO 45001','MANT ISO 45001','SA 8000','MANT SA8000','ISO 50000','MANT ISO 50000','ISO 27001','MANT ISO 27001','ISO 27017','MANT ISO 27017','ISO 27018','MANT ISO 27018','ISO 42000','MANT ISO 42000','ISO 37001','MANT ISO 37001','ISO 39001','MANT 39001','ISO 22000','MANT ISO 22000','ISO 22005','MANT ISO 22005','ISO 1090','MANT ISO 1090','SISTEMA INTEGRATO','MANTENIMENTO SISTEMA INTEGRATO','HALAL','MANTENIMENTO HALAL','GLOBAL GAP','MANTENIMENTO GLOBAL GAP','BIOLOGICO','MANTENIMENTO BIOLOGICO','MARC CE','FPC CLS','MANTENIMENTO FPC CLS','MANTENIMENTO MAR CE','BRC','MANTENIMENTO BRC AEO','Parità di genere','MANTENIMENTO Parità di genere','MODELLO 231','ODV 231','PRIVACY (GDPR)','HACCP','MANT HACCP','ANALISI TAMPONE HACCP'],
@@ -124,7 +124,7 @@ $pdo->exec("CREATE TABLE IF NOT EXISTS offerte (
     servizio VARCHAR(80) NOT NULL,
     tipo_dettaglio VARCHAR(30) NOT NULL,
     dettaglio_servizio VARCHAR(120) NOT NULL,
-    stato VARCHAR(20) NOT NULL DEFAULT 'Generata',
+    stato VARCHAR(20) NOT NULL DEFAULT 'In Lavorazione',
     specifiche_oggetto TEXT NULL,
     sede_erogazione_servizio VARCHAR(255) NULL,
     azienda_id INT UNSIGNED NULL,
@@ -159,11 +159,13 @@ $pdo->exec("CREATE TABLE IF NOT EXISTS commesse (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
 
 $migrations=[
-    'stato'=>"ALTER TABLE offerte ADD COLUMN stato VARCHAR(20) NOT NULL DEFAULT 'Generata' AFTER dettaglio_servizio",
+    'stato'=>"ALTER TABLE offerte ADD COLUMN stato VARCHAR(20) NOT NULL DEFAULT 'In Lavorazione' AFTER dettaglio_servizio",
     'consulente_incaricato'=>"ALTER TABLE offerte ADD COLUMN consulente_incaricato VARCHAR(100) NULL AFTER sconto_percentuale",
     'azienda_id'=>"ALTER TABLE offerte ADD COLUMN azienda_id INT UNSIGNED NULL AFTER sede_erogazione_servizio",
 ];
 foreach($migrations as $col=>$sql){ if(!(bool)$pdo->query("SHOW COLUMNS FROM offerte LIKE '{$col}'")->fetch()){ $pdo->exec($sql);} }
+$pdo->exec("ALTER TABLE offerte MODIFY COLUMN stato VARCHAR(20) NOT NULL DEFAULT 'In Lavorazione'");
+$pdo->exec("UPDATE offerte SET stato = 'In Lavorazione' WHERE stato = 'Generata'");
 
 $utenti = $pdo->query('SELECT id, nome, cognome FROM utenti ORDER BY nome, cognome')->fetchAll();
 $CONSULENTI = [];
@@ -211,7 +213,7 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
     if($azione==='save'){
         $id=(int)($_POST['id']??0);
         $servizio=trim($_POST['servizio']??''); $dettaglioServizio=trim($_POST['dettaglio_servizio']??'');
-        $stato=trim($_POST['stato']??'Generata'); $consulenteIncaricato=trim($_POST['consulente_incaricato']??'');
+        $stato=trim($_POST['stato']??'In Lavorazione'); $consulenteIncaricato=trim($_POST['consulente_incaricato']??'');
         $specificheOggetto=trim($_POST['specifiche_oggetto']??''); $sedeErogazione=trim($_POST['sede_erogazione_servizio']??'');
         $aziendaId = ($_POST['azienda_id'] ?? '') !== '' ? (int) $_POST['azienda_id'] : null;
         $rcoUtenteId=(int)($_POST['rco_utente_id']??0); $segnalatoDaUtenteId=($_POST['segnalato_da_utente_id']??'')!==''?(int)$_POST['segnalato_da_utente_id']:null;
@@ -329,7 +331,7 @@ renderHeader('Simplex - Offerte');
 <div class="card mb-4"><div class="card-header"><?= $editId>0?'Modifica Offerta':'Nuova Offerta' ?></div><div class="card-body"><form method="post" class="row g-3" id="form-offerta"><input type="hidden" name="azione" value="save"><input type="hidden" name="id" value="<?= (int)($formData['id']??0) ?>">
 <div class="col-md-4"><label class="form-label">Servizio *</label><select class="form-select" name="servizio" id="servizio" required><option value="">-- Seleziona --</option><?php foreach($SERVIZI as $sv): ?><option value="<?= htmlspecialchars($sv) ?>" <?= (($formData['servizio']??'')===$sv)?'selected':'' ?>><?= htmlspecialchars($sv) ?></option><?php endforeach; ?></select></div>
 <div class="col-md-4"><label class="form-label" id="label-dettaglio">Dettaglio *</label><select class="form-select" name="dettaglio_servizio" id="dettaglio_servizio" required></select></div>
-<div class="col-md-4"><label class="form-label">Status Offerta</label><select class="form-select" name="stato" id="stato_offerta" required><?php foreach($STATI_OFFERTA as $st): ?><option value="<?= $st ?>" <?= (($formData['stato']??'Generata')===$st)?'selected':'' ?>><?= $st ?></option><?php endforeach; ?></select></div>
+<div class="col-md-4"><label class="form-label">Status Offerta</label><select class="form-select" name="stato" id="stato_offerta" required><?php foreach($STATI_OFFERTA as $st): ?><option value="<?= $st ?>" <?= (($formData['stato']??'In Lavorazione')===$st)?'selected':'' ?>><?= $st ?></option><?php endforeach; ?></select></div>
 <div class="col-md-6" id="box-consulente"><label class="form-label">Consulente incaricato (per Aggiudicata)</label><select class="form-select" name="consulente_incaricato" id="consulente_incaricato"><option value="">-- Seleziona --</option><?php foreach($CONSULENTI as $cons): ?><option value="<?= htmlspecialchars($cons) ?>" <?= (($formData['consulente_incaricato']??'')===$cons)?'selected':'' ?>><?= htmlspecialchars($cons) ?></option><?php endforeach; ?></select></div>
 <div class="col-12"><label class="form-label">Specifiche Oggetto</label><textarea class="form-control" name="specifiche_oggetto" rows="2"><?= htmlspecialchars($formData['specifiche_oggetto']??'') ?></textarea></div>
 <div class="col-md-6"><label class="form-label">Sede di erogazione del servizio</label><input class="form-control" name="sede_erogazione_servizio" value="<?= htmlspecialchars($formData['sede_erogazione_servizio']??'') ?>"></div>
