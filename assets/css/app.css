@@ -1,0 +1,31 @@
+body {
+    background-color: #f8f9fa;
+}
+
+.sidebar {
+    min-height: 100vh;
+    background-color: #212529;
+}
+
+.sidebar .nav-link {
+    color: #adb5bd;
+}
+
+.sidebar .nav-link.active,
+.sidebar .nav-link:hover {
+    color: #fff;
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.sidebar .collapse .nav-link {
+    font-size: 0.95rem;
+    padding-top: 0.3rem;
+    padding-bottom: 0.3rem;
+}
+
+.table thead th,
+.table-light th {
+    background-color: #212529 !important;
+    color: #fff !important;
+    border-color: #2b3035 !important;
+}
