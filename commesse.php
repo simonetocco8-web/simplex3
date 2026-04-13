@@ -48,8 +48,24 @@ $pdo->exec("CREATE TABLE IF NOT EXISTS commessa_momenti_lavorazione (
     numero_incontri INT UNSIGNED NOT NULL DEFAULT 0,
     ore_studio VARCHAR(5) NULL,
     data_prevista DATE NULL,
+    completato TINYINT(1) NOT NULL DEFAULT 0,
+    completato_il DATETIME NULL,
     creato_il TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT fk_momento_commessa FOREIGN KEY (commessa_id) REFERENCES commesse(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+
+$pdo->exec("CREATE TABLE IF NOT EXISTS offerta_momenti_lavorazione (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    offerta_id INT UNSIGNED NOT NULL,
+    data_momento DATE NOT NULL,
+    tipologia ENUM('Apertura', 'Chiusura') NOT NULL,
+    valore_giornaliero_uomo DECIMAL(12,2) NOT NULL,
+    ore DECIMAL(8,2) NOT NULL DEFAULT 0,
+    giorni DECIMAL(8,2) NOT NULL DEFAULT 0,
+    numero_incontri INT UNSIGNED NOT NULL DEFAULT 0,
+    ore_studio VARCHAR(5) NULL,
+    data_prevista DATE NULL,
+    creato_il TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
 
 $pdo->exec("CREATE TABLE IF NOT EXISTS fatture (
@@ -81,9 +97,12 @@ $migrations = [
     'ente_certificazione_id' => 'ALTER TABLE commesse ADD COLUMN ente_certificazione_id INT UNSIGNED NULL AFTER budget',
     'importo_ente_certificazione' => 'ALTER TABLE commesse ADD COLUMN importo_ente_certificazione DECIMAL(12,2) NULL AFTER ente_certificazione_id',
     'azienda_cliente_id' => 'ALTER TABLE commesse ADD COLUMN azienda_cliente_id INT UNSIGNED NULL AFTER importo_ente_certificazione',
+    'completato' => 'ALTER TABLE commessa_momenti_lavorazione ADD COLUMN completato TINYINT(1) NOT NULL DEFAULT 0 AFTER data_prevista',
+    'completato_il' => 'ALTER TABLE commessa_momenti_lavorazione ADD COLUMN completato_il DATETIME NULL AFTER completato',
 ];
 foreach ($migrations as $column => $sqlAlter) {
-    $exists = (bool) $pdo->query("SHOW COLUMNS FROM commesse LIKE '{$column}'")->fetch();
+    $table = in_array($column, ['completato', 'completato_il'], true) ? 'commessa_momenti_lavorazione' : 'commesse';
+    $exists = (bool) $pdo->query("SHOW COLUMNS FROM {$table} LIKE '{$column}'")->fetch();
     if (!$exists) {
         $pdo->exec($sqlAlter);
     }
@@ -234,85 +253,40 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
 
-    if ($azione === 'save_momento') {
+    if ($azione === 'complete_momento') {
         $id = (int) ($_POST['id'] ?? 0);
-        $dataMomento = trim($_POST['data_momento'] ?? '');
-        $tipologia = trim($_POST['tipologia'] ?? '');
-        $valore = str_replace(',', '.', trim($_POST['valore_giornaliero_uomo'] ?? ''));
-        $ore = str_replace(',', '.', trim($_POST['ore'] ?? '0'));
-        $giorni = str_replace(',', '.', trim($_POST['giorni'] ?? '0'));
-        $incontri = (int) ($_POST['numero_incontri'] ?? 0);
-        $oreStudio = trim($_POST['ore_studio'] ?? '');
-        $dataPrevista = trim($_POST['data_prevista'] ?? '');
-
-        if ($id <= 0) {
-            $errors[] = 'Commessa non valida per la pianificazione.';
-        }
-        if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $dataMomento)) {
-            $errors[] = 'Data del momento non valida.';
-        }
-        if (!in_array($tipologia, ['Apertura', 'Chiusura'], true)) {
-            $errors[] = 'Tipologia momento non valida.';
-        }
-        if (!is_numeric($valore) || (float) $valore < 0) {
-            $errors[] = 'Valore Giornaliero Uomo non valido.';
-        }
-        if (!is_numeric($ore) || (float) $ore < 0) {
-            $errors[] = 'Ore non valide.';
-        }
-        if (!is_numeric($giorni) || (float) $giorni < 0) {
-            $errors[] = 'Giorni non validi.';
-        }
-        if ($oreStudio !== '' && !preg_match('/^([01]?\d|2[0-3]):[0-5]\d$/', $oreStudio)) {
-            $errors[] = '# ore di studio deve essere nel formato HH:MM.';
-        }
-        if ($dataPrevista !== '' && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $dataPrevista)) {
-            $errors[] = 'Data Prevista non valida.';
-        }
-
-        if (!$errors) {
-            $stmtMom = $pdo->prepare(
-                'INSERT INTO commessa_momenti_lavorazione
-                 (commessa_id, data_momento, tipologia, valore_giornaliero_uomo, ore, giorni, numero_incontri, ore_studio, data_prevista)
-                 VALUES
-                 (:commessa_id, :data_momento, :tipologia, :valore_giornaliero_uomo, :ore, :giorni, :numero_incontri, :ore_studio, :data_prevista)'
-            );
-            $stmtMom->execute([
-                ':commessa_id' => $id,
-                ':data_momento' => $dataMomento,
-                ':tipologia' => $tipologia,
-                ':valore_giornaliero_uomo' => number_format((float) $valore, 2, '.', ''),
-                ':ore' => number_format((float) $ore, 2, '.', ''),
-                ':giorni' => number_format((float) $giorni, 2, '.', ''),
-                ':numero_incontri' => $incontri,
-                ':ore_studio' => $oreStudio !== '' ? $oreStudio : null,
-                ':data_prevista' => $dataPrevista !== '' ? $dataPrevista : null,
-            ]);
-            $momentoId = (int) $pdo->lastInsertId();
-
-            if ($tipologia === 'Chiusura') {
-                $valoreG = (float) $valore;
-                $oreM = (float) $ore;
-                $giorniM = (float) $giorni;
-                $giornateCalcolate = $giorniM > 0 ? $giorniM : ($oreM / 8);
-                $importoFattura = max(0, $valoreG * $giornateCalcolate);
-
-                $numeroFattura = $momentoId . '/' . date('Y');
-                $stmtFattura = $pdo->prepare(
-                    'INSERT INTO fatture (commessa_id, momento_id, numero, anno_riferimento, importo)
-                     VALUES (:commessa_id, :momento_id, :numero, :anno_riferimento, :importo)'
-                );
-                $stmtFattura->execute([
-                    ':commessa_id' => $id,
-                    ':momento_id' => $momentoId,
-                    ':numero' => $numeroFattura,
-                    ':anno_riferimento' => (int) date('Y'),
-                    ':importo' => number_format($importoFattura, 2, '.', ''),
-                ]);
+        $momentoId = (int) ($_POST['momento_id'] ?? 0);
+        if ($id <= 0 || $momentoId <= 0) {
+            $errors[] = 'Dati completamento momento non validi.';
+        } else {
+            $stmtMom = $pdo->prepare('SELECT * FROM commessa_momenti_lavorazione WHERE id = :id AND commessa_id = :commessa_id');
+            $stmtMom->execute([':id' => $momentoId, ':commessa_id' => $id]);
+            $momento = $stmtMom->fetch();
+            if (!$momento) {
+                $errors[] = 'Momento non trovato.';
+            } else {
+                $pdo->prepare('UPDATE commessa_momenti_lavorazione SET completato = 1, completato_il = NOW() WHERE id = :id')->execute([':id' => $momentoId]);
+                $stmtExists = $pdo->prepare('SELECT id FROM fatture WHERE momento_id = :momento_id LIMIT 1');
+                $stmtExists->execute([':momento_id' => $momentoId]);
+                if (!$stmtExists->fetchColumn()) {
+                    $valoreG = (float) $momento['valore_giornaliero_uomo'];
+                    $oreM = (float) $momento['ore'];
+                    $giorniM = (float) $momento['giorni'];
+                    $giornateCalcolate = $giorniM > 0 ? $giorniM : ($oreM / 8);
+                    $importoFattura = max(0, $valoreG * $giornateCalcolate);
+                    $numeroFattura = $momentoId . '/' . date('Y');
+                    $pdo->prepare('INSERT INTO fatture (commessa_id, momento_id, numero, anno_riferimento, importo) VALUES (:commessa_id, :momento_id, :numero, :anno, :importo)')
+                        ->execute([
+                            ':commessa_id' => $id,
+                            ':momento_id' => $momentoId,
+                            ':numero' => $numeroFattura,
+                            ':anno' => (int) date('Y'),
+                            ':importo' => number_format($importoFattura, 2, '.', ''),
+                        ]);
+                }
+                $success = 'Momento completato e fattura generata.';
+                $editId = $id;
             }
-
-            $success = 'Momento di lavorazione aggiunto.';
-            $editId = $id;
         }
     }
 }
@@ -328,6 +302,25 @@ if ($editId > 0) {
     $commessaInModifica = $stmtEdit->fetch();
 
     if ($commessaInModifica) {
+        $pdo->prepare(
+            'INSERT INTO commessa_momenti_lavorazione (commessa_id, data_momento, tipologia, valore_giornaliero_uomo, ore, giorni, numero_incontri, ore_studio, data_prevista)
+             SELECT :commessa_id, om.data_momento, om.tipologia, om.valore_giornaliero_uomo, om.ore, om.giorni, om.numero_incontri, om.ore_studio, om.data_prevista
+             FROM offerta_momenti_lavorazione om
+             WHERE om.offerta_id = :offerta_id
+               AND NOT EXISTS (
+                   SELECT 1 FROM commessa_momenti_lavorazione cm
+                   WHERE cm.commessa_id = :commessa_id
+                     AND cm.data_momento = om.data_momento
+                     AND cm.tipologia = om.tipologia
+                     AND cm.valore_giornaliero_uomo = om.valore_giornaliero_uomo
+                     AND cm.ore = om.ore
+                     AND cm.giorni = om.giorni
+               )'
+        )->execute([
+            ':commessa_id' => $editId,
+            ':offerta_id' => (int) ($commessaInModifica['offerta_id'] ?? 0),
+        ]);
+
         $stmtFiles = $pdo->prepare('SELECT * FROM commesse_file WHERE commessa_id = :commessa_id ORDER BY caricato_il DESC');
         $stmtFiles->execute([':commessa_id' => $editId]);
         $filesCommessa = $stmtFiles->fetchAll();
@@ -453,7 +446,7 @@ renderHeader('Simplex - Commesse');
                 <div class="card mb-4">
                     <div class="card-header d-flex justify-content-between align-items-center">
                         <span>Modifica Commessa <?= htmlspecialchars($commessaInModifica['protocollo']) ?></span>
-                        <button class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#modalPianificazione">Pianificazione</button>
+                        <span class="badge text-bg-secondary">Momenti importati da Offerta</span>
                     </div>
                     <div class="card-body">
                         <form method="post" class="row g-3">
@@ -480,12 +473,12 @@ renderHeader('Simplex - Commesse');
                         <table class="table table-sm table-striped mb-0 align-middle">
                             <thead>
                                 <tr>
-                                    <th>Data</th><th>Tipologia</th><th>Valore Giornaliero Uomo (€)</th><th>Ore</th><th>Giorni</th><th># Incontri</th><th># ore di studio</th><th>Data Prevista</th><th>Fattura</th>
+                                    <th>Data</th><th>Tipologia</th><th>Valore Giornaliero Uomo (€)</th><th>Ore</th><th>Giorni</th><th># Incontri</th><th># ore di studio</th><th>Data Prevista</th><th>Completato</th><th>Fattura</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 <?php if (!$momentiCommessa): ?>
-                                    <tr><td colspan="9" class="text-center text-muted py-3">Nessun momento inserito.</td></tr>
+                                    <tr><td colspan="10" class="text-center text-muted py-3">Nessun momento inserito.</td></tr>
                                 <?php endif; ?>
                                 <?php foreach ($momentiCommessa as $momento): ?>
                                     <tr>
@@ -497,6 +490,18 @@ renderHeader('Simplex - Commesse');
                                         <td><?= htmlspecialchars((string)$momento['numero_incontri']) ?></td>
                                         <td><?= htmlspecialchars($momento['ore_studio'] ?? '-') ?></td>
                                         <td><?= htmlspecialchars($momento['data_prevista'] ?? '-') ?></td>
+                                        <td>
+                                            <?php if ((int)($momento['completato'] ?? 0) === 1): ?>
+                                                <span class="badge text-bg-success">Sì</span>
+                                            <?php else: ?>
+                                                <form method="post" class="d-inline">
+                                                    <input type="hidden" name="azione" value="complete_momento">
+                                                    <input type="hidden" name="id" value="<?= (int)$commessaInModifica['id'] ?>">
+                                                    <input type="hidden" name="momento_id" value="<?= (int)$momento['id'] ?>">
+                                                    <button type="submit" class="btn btn-sm btn-outline-primary">✔</button>
+                                                </form>
+                                            <?php endif; ?>
+                                        </td>
                                         <td>
                                             <?php $fatturaMomento = $fatturePerMomento[(int) $momento['id']] ?? null; ?>
                                             <?php if ($fatturaMomento): ?>
@@ -588,38 +593,5 @@ renderHeader('Simplex - Commesse');
         </main>
     </div>
 </div>
-
-<?php if ($commessaInModifica): ?>
-<div class="modal fade" id="modalPianificazione" tabindex="-1" aria-hidden="true">
-  <div class="modal-dialog modal-lg">
-    <div class="modal-content">
-      <form method="post">
-        <div class="modal-header">
-          <h5 class="modal-title">Nuovo Momento di Lavorazione</h5>
-          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-        </div>
-        <div class="modal-body">
-            <input type="hidden" name="azione" value="save_momento">
-            <input type="hidden" name="id" value="<?= (int)$commessaInModifica['id'] ?>">
-            <div class="row g-3">
-                <div class="col-md-3"><label class="form-label">Data</label><input type="date" class="form-control" name="data_momento" required></div>
-                <div class="col-md-3"><label class="form-label">Tipologia</label><select class="form-select" name="tipologia" required><option value="Apertura">Apertura</option><option value="Chiusura">Chiusura</option></select></div>
-                <div class="col-md-3"><label class="form-label">Valore Giornaliero Uomo (€)</label><input type="number" step="0.01" min="0" class="form-control" name="valore_giornaliero_uomo" required></div>
-                <div class="col-md-3"><label class="form-label">Ore</label><input type="number" step="0.01" min="0" class="form-control" name="ore" value="0"></div>
-                <div class="col-md-3"><label class="form-label">Giorni</label><input type="number" step="0.01" min="0" class="form-control" name="giorni" value="0"></div>
-                <div class="col-md-3"><label class="form-label"># Incontri</label><input type="number" min="0" class="form-control" name="numero_incontri" value="0"></div>
-                <div class="col-md-3"><label class="form-label"># ore di studio (HH:MM)</label><input class="form-control" name="ore_studio" placeholder="es. 02:30"></div>
-                <div class="col-md-3"><label class="form-label">Data Prevista</label><input type="date" class="form-control" name="data_prevista"></div>
-            </div>
-        </div>
-        <div class="modal-footer">
-          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Annulla</button>
-          <button type="submit" class="btn btn-primary">Salva</button>
-        </div>
-      </form>
-    </div>
-  </div>
-</div>
-<?php endif; ?>
 
 <?php renderFooter(); ?>

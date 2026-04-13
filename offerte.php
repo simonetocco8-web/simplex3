@@ -109,6 +109,17 @@ function ensureCommessa(PDO $pdo, int $offertaId, string $consulente): ?string
         ':nome' => $consulente,
     ]);
 
+    $commessaId = (int) $pdo->lastInsertId();
+    $pdo->prepare(
+        'INSERT INTO commessa_momenti_lavorazione (commessa_id, data_momento, tipologia, valore_giornaliero_uomo, ore, giorni, numero_incontri, ore_studio, data_prevista)
+         SELECT :commessa_id, om.data_momento, om.tipologia, om.valore_giornaliero_uomo, om.ore, om.giorni, om.numero_incontri, om.ore_studio, om.data_prevista
+         FROM offerta_momenti_lavorazione om
+         WHERE om.offerta_id = :offerta_id'
+    )->execute([
+        ':commessa_id' => $commessaId,
+        ':offerta_id' => $offertaId,
+    ]);
+
     return $protocollo;
 }
 
@@ -158,6 +169,37 @@ $pdo->exec("CREATE TABLE IF NOT EXISTS commesse (
     CONSTRAINT fk_commessa_offerta FOREIGN KEY (offerta_id) REFERENCES offerte(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
 
+$pdo->exec("CREATE TABLE IF NOT EXISTS commessa_momenti_lavorazione (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    commessa_id INT UNSIGNED NOT NULL,
+    data_momento DATE NOT NULL,
+    tipologia ENUM('Apertura', 'Chiusura') NOT NULL,
+    valore_giornaliero_uomo DECIMAL(12,2) NOT NULL,
+    ore DECIMAL(8,2) NOT NULL DEFAULT 0,
+    giorni DECIMAL(8,2) NOT NULL DEFAULT 0,
+    numero_incontri INT UNSIGNED NOT NULL DEFAULT 0,
+    ore_studio VARCHAR(5) NULL,
+    data_prevista DATE NULL,
+    completato TINYINT(1) NOT NULL DEFAULT 0,
+    completato_il DATETIME NULL,
+    creato_il TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+
+$pdo->exec("CREATE TABLE IF NOT EXISTS offerta_momenti_lavorazione (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    offerta_id INT UNSIGNED NOT NULL,
+    data_momento DATE NOT NULL,
+    tipologia ENUM('Apertura', 'Chiusura') NOT NULL,
+    valore_giornaliero_uomo DECIMAL(12,2) NOT NULL,
+    ore DECIMAL(8,2) NOT NULL DEFAULT 0,
+    giorni DECIMAL(8,2) NOT NULL DEFAULT 0,
+    numero_incontri INT UNSIGNED NOT NULL DEFAULT 0,
+    ore_studio VARCHAR(5) NULL,
+    data_prevista DATE NULL,
+    creato_il TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_offerta_momento_offerta FOREIGN KEY (offerta_id) REFERENCES offerte(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+
 $migrations=[
     'stato'=>"ALTER TABLE offerte ADD COLUMN stato VARCHAR(20) NOT NULL DEFAULT 'In Lavorazione' AFTER dettaglio_servizio",
     'consulente_incaricato'=>"ALTER TABLE offerte ADD COLUMN consulente_incaricato VARCHAR(100) NULL AFTER sconto_percentuale",
@@ -196,6 +238,12 @@ $action=$_GET['action']??'list'; $viewId=(int)($_GET['view']??0); $editId=(int)(
 $offertaInModifica=null; $offertaInVisualizzazione=null;
 if($viewId>0){$st=$pdo->prepare('SELECT o.*, c.protocollo AS commessa_protocollo, c.consulente_nome AS commessa_consulente FROM offerte o LEFT JOIN commesse c ON c.offerta_id=o.id WHERE o.id=:id');$st->execute([':id'=>$viewId]);$offertaInVisualizzazione=$st->fetch();}
 if($editId>0){$st=$pdo->prepare('SELECT * FROM offerte WHERE id=:id');$st->execute([':id'=>$editId]);$offertaInModifica=$st->fetch();}
+$momentiOfferta = [];
+if ($editId > 0) {
+    $stMom = $pdo->prepare('SELECT * FROM offerta_momenti_lavorazione WHERE offerta_id = :offerta_id ORDER BY id ASC');
+    $stMom->execute([':offerta_id' => $editId]);
+    $momentiOfferta = $stMom->fetchAll();
+}
 
 if($_SERVER['REQUEST_METHOD']==='POST'){
     $azione=$_POST['azione']??'';
@@ -269,6 +317,38 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
             if($stato==='Aggiudicata'){
                 $nuovaCommessa = ensureCommessa($pdo, $offertaIdForCommessa, $consulenteIncaricato);
                 if($nuovaCommessa){ $success .= ' | Commessa generata: ' . $nuovaCommessa; }
+            }
+
+            $momData = $_POST['momento_data_momento'] ?? [];
+            $momTip = $_POST['momento_tipologia'] ?? [];
+            $momVal = $_POST['momento_valore_giornaliero_uomo'] ?? [];
+            $momOre = $_POST['momento_ore'] ?? [];
+            $momGio = $_POST['momento_giorni'] ?? [];
+            if (is_array($momData) && is_array($momTip) && is_array($momVal)) {
+                $pdo->prepare('DELETE FROM offerta_momenti_lavorazione WHERE offerta_id = :offerta_id')->execute([':offerta_id' => $offertaIdForCommessa]);
+                $rows = max(count($momData), count($momTip), count($momVal));
+                $insMomOff = $pdo->prepare('INSERT INTO offerta_momenti_lavorazione (offerta_id, data_momento, tipologia, valore_giornaliero_uomo, ore, giorni) VALUES (:offerta_id, :data_momento, :tipologia, :valore, :ore, :giorni)');
+                for ($i = 0; $i < $rows; $i++) {
+                    $d = trim((string)($momData[$i] ?? ''));
+                    $t = trim((string)($momTip[$i] ?? ''));
+                    $v = str_replace(',', '.', trim((string)($momVal[$i] ?? '')));
+                    $o = str_replace(',', '.', trim((string)($momOre[$i] ?? '0')));
+                    $g = str_replace(',', '.', trim((string)($momGio[$i] ?? '0')));
+                    if ($d === '' && $t === '' && $v === '') continue;
+                    if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $d)) continue;
+                    if (!in_array($t, ['Apertura', 'Chiusura'], true)) continue;
+                    if (!is_numeric($v) || (float)$v < 0) continue;
+                    if (!is_numeric($o) || (float)$o < 0) $o = '0';
+                    if (!is_numeric($g) || (float)$g < 0) $g = '0';
+                    $insMomOff->execute([
+                        ':offerta_id' => $offertaIdForCommessa,
+                        ':data_momento' => $d,
+                        ':tipologia' => $t,
+                        ':valore' => number_format((float)$v, 2, '.', ''),
+                        ':ore' => number_format((float)$o, 2, '.', ''),
+                        ':giorni' => number_format((float)$g, 2, '.', ''),
+                    ]);
+                }
             }
 
             $action='list'; $editId=0; $offertaInModifica=null;
@@ -348,6 +428,28 @@ renderHeader('Simplex - Offerte');
 <div class="col-md-4"><label class="form-label">Modalità di Pagamento</label><select class="form-select" name="modalita_pagamento" required><option value="">-- Seleziona --</option><?php foreach($MODALITA_PAGAMENTO as $m): ?><option value="<?= htmlspecialchars($m) ?>" <?= (($formData['modalita_pagamento']??'')===$m)?'selected':'' ?>><?= htmlspecialchars($m) ?></option><?php endforeach; ?></select></div>
 <div class="col-md-4"><label class="form-label">% Sconto</label><input type="number" min="0" max="100" step="0.01" class="form-control" required name="sconto_percentuale" value="<?= htmlspecialchars($formData['sconto_percentuale']??'') ?>"></div>
 <div class="col-12"><label class="form-label">Note</label><textarea class="form-control" name="note" rows="2"><?= htmlspecialchars($formData['note']??'') ?></textarea></div>
+<div class="col-12">
+    <label class="form-label">Momenti di Lavorazione (da riportare in Commessa)</label>
+    <div class="table-responsive">
+        <table class="table table-sm table-bordered" id="tabella-momenti-offerta">
+            <thead><tr><th>Data</th><th>Tipologia</th><th>Valore €/giorno</th><th>Ore</th><th>Giorni</th><th></th></tr></thead>
+            <tbody>
+            <?php $momRows = $momentiOfferta ?: [['data_momento'=>'','tipologia'=>'Apertura','valore_giornaliero_uomo'=>'','ore'=>'0','giorni'=>'0']]; ?>
+            <?php foreach($momRows as $m): ?>
+                <tr>
+                    <td><input type="date" class="form-control" name="momento_data_momento[]" value="<?= htmlspecialchars($m['data_momento'] ?? '') ?>"></td>
+                    <td><select class="form-select" name="momento_tipologia[]"><option value="Apertura" <?= (($m['tipologia'] ?? '')==='Apertura')?'selected':'' ?>>Apertura</option><option value="Chiusura" <?= (($m['tipologia'] ?? '')==='Chiusura')?'selected':'' ?>>Chiusura</option></select></td>
+                    <td><input type="number" min="0" step="0.01" class="form-control" name="momento_valore_giornaliero_uomo[]" value="<?= htmlspecialchars((string)($m['valore_giornaliero_uomo'] ?? '')) ?>"></td>
+                    <td><input type="number" min="0" step="0.01" class="form-control" name="momento_ore[]" value="<?= htmlspecialchars((string)($m['ore'] ?? '0')) ?>"></td>
+                    <td><input type="number" min="0" step="0.01" class="form-control" name="momento_giorni[]" value="<?= htmlspecialchars((string)($m['giorni'] ?? '0')) ?>"></td>
+                    <td><button type="button" class="btn btn-sm btn-outline-danger btn-rimuovi-momento">✕</button></td>
+                </tr>
+            <?php endforeach; ?>
+            </tbody>
+        </table>
+    </div>
+    <button type="button" class="btn btn-sm btn-outline-primary" id="btn-aggiungi-momento-offerta">+ Aggiungi momento</button>
+</div>
 <div class="col-12 d-flex gap-2"><button class="btn btn-primary" type="submit">Salva Offerta</button><a class="btn btn-outline-secondary" href="offerte.php">Annulla</a></div>
 </form></div></div>
 <?php endif; ?>
@@ -439,6 +541,20 @@ if(formNuovaAzienda&&aziendaSel){
         const modalEl=document.getElementById('modalNuovaAzienda');
         const modal=bootstrap.Modal.getInstance(modalEl);
         if(modal){ modal.hide(); }
+    });
+}
+const tabellaMomentiOfferta=document.querySelector('#tabella-momenti-offerta tbody');
+const btnAggiungiMomentoOfferta=document.getElementById('btn-aggiungi-momento-offerta');
+if(tabellaMomentiOfferta&&btnAggiungiMomentoOfferta){
+    btnAggiungiMomentoOfferta.addEventListener('click',()=>{
+        const tr=document.createElement('tr');
+        tr.innerHTML='<td><input type=\"date\" class=\"form-control\" name=\"momento_data_momento[]\"></td><td><select class=\"form-select\" name=\"momento_tipologia[]\"><option value=\"Apertura\">Apertura</option><option value=\"Chiusura\">Chiusura</option></select></td><td><input type=\"number\" min=\"0\" step=\"0.01\" class=\"form-control\" name=\"momento_valore_giornaliero_uomo[]\"></td><td><input type=\"number\" min=\"0\" step=\"0.01\" class=\"form-control\" name=\"momento_ore[]\" value=\"0\"></td><td><input type=\"number\" min=\"0\" step=\"0.01\" class=\"form-control\" name=\"momento_giorni[]\" value=\"0\"></td><td><button type=\"button\" class=\"btn btn-sm btn-outline-danger btn-rimuovi-momento\">✕</button></td>';
+        tabellaMomentiOfferta.appendChild(tr);
+    });
+    tabellaMomentiOfferta.addEventListener('click',(e)=>{
+        const btn=e.target.closest('.btn-rimuovi-momento');
+        if(!btn) return;
+        btn.closest('tr')?.remove();
     });
 }
 </script>
