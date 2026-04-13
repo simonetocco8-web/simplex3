@@ -304,12 +304,12 @@ if ($editId > 0) {
     if ($commessaInModifica) {
         $pdo->prepare(
             'INSERT INTO commessa_momenti_lavorazione (commessa_id, data_momento, tipologia, valore_giornaliero_uomo, ore, giorni, numero_incontri, ore_studio, data_prevista)
-             SELECT :commessa_id, om.data_momento, om.tipologia, om.valore_giornaliero_uomo, om.ore, om.giorni, om.numero_incontri, om.ore_studio, om.data_prevista
+             SELECT ?, om.data_momento, om.tipologia, om.valore_giornaliero_uomo, om.ore, om.giorni, om.numero_incontri, om.ore_studio, om.data_prevista
              FROM offerta_momenti_lavorazione om
-             WHERE om.offerta_id = :offerta_id
+             WHERE om.offerta_id = ?
                AND NOT EXISTS (
                    SELECT 1 FROM commessa_momenti_lavorazione cm
-                   WHERE cm.commessa_id = :commessa_id
+                   WHERE cm.commessa_id = ?
                      AND cm.data_momento = om.data_momento
                      AND cm.tipologia = om.tipologia
                      AND cm.valore_giornaliero_uomo = om.valore_giornaliero_uomo
@@ -317,8 +317,9 @@ if ($editId > 0) {
                      AND cm.giorni = om.giorni
                )'
         )->execute([
-            ':commessa_id' => $editId,
-            ':offerta_id' => (int) ($commessaInModifica['offerta_id'] ?? 0),
+            $editId,
+            (int) ($commessaInModifica['offerta_id'] ?? 0),
+            $editId,
         ]);
 
         $stmtFiles = $pdo->prepare('SELECT * FROM commesse_file WHERE commessa_id = :commessa_id ORDER BY caricato_il DESC');
