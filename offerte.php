@@ -17,6 +17,64 @@ $DETTAGLI_SERVIZIO = [
     'ALTRE CONSULENZE' => ['MARKETING', 'PIANI STRATEGICI', 'CONTROLLO DI GESTIONE', 'ALTRO'],
 ];
 $MODALITA_PAGAMENTO = ['30-60 FMDF','Bonifico Bancario f.m.v.f','da definire','RI.BA.','RID','rid 06 mensilità','rimessa diretta','Rimessa Diretta'];
+$TIPOLOGIE_AZIENDA = ['Potenziale Cliente', 'Promotore', 'Fornitore', 'Partner'];
+
+function creaAziendaRapida(PDO $pdo, array $input): array
+{
+    $partitaIva = preg_replace('/\D/', '', trim((string) ($input['partita_iva'] ?? '')));
+    $ragioneSociale = trim((string) ($input['ragione_sociale'] ?? ''));
+    $tipologie = $input['tipologia_azienda'] ?? [];
+    if (!is_array($tipologie)) {
+        $tipologie = [];
+    }
+    $tipologieValide = array_values(array_intersect($tipologie, ['Potenziale Cliente', 'Promotore', 'Fornitore', 'Partner']));
+    $organicoMedio = trim((string) ($input['organico_medio'] ?? ''));
+    $fatturatoRaw = str_replace(',', '.', trim((string) ($input['fatturato'] ?? '')));
+
+    $errors = [];
+    if (!preg_match('/^\d{11}$/', $partitaIva)) $errors[] = 'Partita IVA non valida (11 cifre).';
+    if ($ragioneSociale === '') $errors[] = 'Ragione sociale obbligatoria.';
+    if (!$tipologieValide) $errors[] = 'Seleziona almeno una tipologia azienda.';
+    if ($organicoMedio === '') $errors[] = 'Organico medio obbligatorio.';
+    if ($fatturatoRaw === '' || !is_numeric($fatturatoRaw) || (float)$fatturatoRaw < 0) $errors[] = 'Fatturato non valido.';
+    if ($errors) return ['ok' => false, 'errors' => $errors];
+
+    $stmtExists = $pdo->prepare('SELECT id FROM aziende WHERE partita_iva = :partita_iva LIMIT 1');
+    $stmtExists->execute([':partita_iva' => $partitaIva]);
+    if ($stmtExists->fetchColumn()) {
+        return ['ok' => false, 'errors' => ['Esiste già un\'azienda con questa Partita IVA.']];
+    }
+
+    $stmt = $pdo->prepare(
+        'INSERT INTO aziende (partita_iva, ragione_sociale, tipologia_azienda, organico_medio, fatturato, codice_fiscale, iban, codice_fatturazione, telefono, pec, email, url_sito, via, numero_civico, cap, localita, provincia, categoria, ea, conosciuto_come, principali_prodotti, note)
+         VALUES (:partita_iva, :ragione_sociale, :tipologia_azienda, :organico_medio, :fatturato, :codice_fiscale, :iban, :codice_fatturazione, :telefono, :pec, :email, :url_sito, :via, :numero_civico, :cap, :localita, :provincia, :categoria, :ea, :conosciuto_come, :principali_prodotti, :note)'
+    );
+    $stmt->execute([
+        ':partita_iva' => $partitaIva,
+        ':ragione_sociale' => mb_substr($ragioneSociale, 0, 30),
+        ':tipologia_azienda' => implode(',', $tipologieValide),
+        ':organico_medio' => mb_substr($organicoMedio, 0, 30),
+        ':fatturato' => number_format((float)$fatturatoRaw, 2, '.', ''),
+        ':codice_fiscale' => trim((string) ($input['codice_fiscale'] ?? '')) ?: null,
+        ':iban' => trim((string) ($input['iban'] ?? '')) ?: null,
+        ':codice_fatturazione' => trim((string) ($input['codice_fatturazione'] ?? '')) ?: null,
+        ':telefono' => trim((string) ($input['telefono'] ?? '')) ?: null,
+        ':pec' => trim((string) ($input['pec'] ?? '')) ?: null,
+        ':email' => trim((string) ($input['email'] ?? '')) ?: null,
+        ':url_sito' => trim((string) ($input['url_sito'] ?? '')) ?: null,
+        ':via' => trim((string) ($input['via'] ?? '')) ?: null,
+        ':numero_civico' => trim((string) ($input['numero_civico'] ?? '')) ?: null,
+        ':cap' => trim((string) ($input['cap'] ?? '')) ?: null,
+        ':localita' => trim((string) ($input['localita'] ?? '')) ?: null,
+        ':provincia' => trim((string) ($input['provincia'] ?? '')) ?: null,
+        ':categoria' => trim((string) ($input['categoria'] ?? '')) ?: null,
+        ':ea' => trim((string) ($input['ea'] ?? '')) ?: null,
+        ':conosciuto_come' => trim((string) ($input['conosciuto_come'] ?? '')) ?: null,
+        ':principali_prodotti' => trim((string) ($input['principali_prodotti'] ?? '')) ?: null,
+        ':note' => trim((string) ($input['note'] ?? '')) ?: null,
+    ]);
+    return ['ok' => true, 'id' => (int)$pdo->lastInsertId(), 'ragione_sociale' => mb_substr($ragioneSociale, 0, 30)];
+}
 
 function ensureCommessa(PDO $pdo, int $offertaId, string $consulente): ?string
 {
@@ -139,6 +197,16 @@ if($editId>0){$st=$pdo->prepare('SELECT * FROM offerte WHERE id=:id');$st->execu
 
 if($_SERVER['REQUEST_METHOD']==='POST'){
     $azione=$_POST['azione']??'';
+    if ($azione === 'ajax_create_azienda') {
+        header('Content-Type: application/json; charset=utf-8');
+        if (!(bool)$pdo->query("SHOW TABLES LIKE 'aziende'")->fetchColumn()) {
+            echo json_encode(['ok' => false, 'errors' => ['Tabella aziende non disponibile.']]);
+            exit;
+        }
+        $result = creaAziendaRapida($pdo, $_POST);
+        echo json_encode($result, JSON_UNESCAPED_UNICODE);
+        exit;
+    }
     if($azione==='delete'){ $id=(int)($_POST['id']??0); if($id>0){$pdo->prepare('DELETE FROM offerte WHERE id=:id')->execute([':id'=>$id]);$success='Offerta eliminata correttamente.';}}
     if($azione==='save'){
         $id=(int)($_POST['id']??0);
@@ -146,7 +214,6 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
         $stato=trim($_POST['stato']??'Generata'); $consulenteIncaricato=trim($_POST['consulente_incaricato']??'');
         $specificheOggetto=trim($_POST['specifiche_oggetto']??''); $sedeErogazione=trim($_POST['sede_erogazione_servizio']??'');
         $aziendaId = ($_POST['azienda_id'] ?? '') !== '' ? (int) $_POST['azienda_id'] : null;
-        $nuovaAzienda = trim((string) ($_POST['nuova_azienda_ragione_sociale'] ?? ''));
         $rcoUtenteId=(int)($_POST['rco_utente_id']??0); $segnalatoDaUtenteId=($_POST['segnalato_da_utente_id']??'')!==''?(int)$_POST['segnalato_da_utente_id']:null;
         $dataOfferta=trim($_POST['data_offerta']??''); $validitaGiorniInput=trim($_POST['validita_giorni']??''); $dataScadenza=trim($_POST['data_scadenza']??'');
         $note=trim($_POST['note']??''); $promotoreAziendaId=($_POST['promotore_azienda_id']??'')!==''?(int)$_POST['promotore_azienda_id']:null;
@@ -158,7 +225,7 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
         if($stato==='Aggiudicata' && !in_array($consulenteIncaricato,$CONSULENTI,true)) $errors[]='Se lo stato è Aggiudicata devi selezionare un consulente incaricato valido.';
         $opzioniDettaglio=$DETTAGLI_SERVIZIO[$servizio]??[]; if(!$opzioniDettaglio||!in_array($dettaglioServizio,$opzioniDettaglio,true)) $errors[]='Dettaglio servizio non valido.';
         if($rcoUtenteId<=0) $errors[]='Il campo RCO è obbligatorio.';
-        if ($aziendaId === null && $nuovaAzienda === '') $errors[]='Il campo Azienda è obbligatorio oppure devi inserirne una nuova.';
+        if ($aziendaId === null) $errors[]='Il campo Azienda è obbligatorio. Se non presente, usa il popup \"Nuova Azienda\".';
         if($dataOfferta===''||!preg_match('/^\d{4}-\d{2}-\d{2}$/',$dataOfferta)) $errors[]='Data Offerta obbligatoria e non valida.';
         $validitaGiorni=$validitaGiorniInput!==''?(int)$validitaGiorniInput:0; if($validitaGiorniInput!==''&&$validitaGiorni<=0)$errors[]='Validità non valida.';
         if($dataScadenza!==''&&!preg_match('/^\d{4}-\d{2}-\d{2}$/',$dataScadenza))$errors[]='Data di Scadenza non valida.';
@@ -172,33 +239,6 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
         if($commissioneTipo!==''&&!in_array($commissioneTipo,['percentuale','euro'],true)) $errors[]='Tipo commissione non valido.';
         $commissioneValore=$commissioneValoreInput!==''?(float)str_replace(',','.',$commissioneValoreInput):null; if($commissioneValore!==null&&$commissioneValore<0)$errors[]='Commissione non valida.';
         $sconto=(float)str_replace(',','.',$scontoInput); if($scontoInput===''||$sconto<0||$sconto>100)$errors[]='% Sconto obbligatorio e tra 0 e 100.';
-
-        if (!$errors && $aziendaId === null && $nuovaAzienda !== '') {
-            if (!(bool)$pdo->query("SHOW TABLES LIKE 'aziende'")->fetchColumn()) {
-                $errors[] = 'Tabella aziende non disponibile.';
-            } else {
-                $stmtExisting = $pdo->prepare('SELECT id FROM aziende WHERE ragione_sociale = :ragione_sociale LIMIT 1');
-                $stmtExisting->execute([':ragione_sociale' => $nuovaAzienda]);
-                $aziendaEsistente = (int) ($stmtExisting->fetchColumn() ?: 0);
-                if ($aziendaEsistente > 0) {
-                    $aziendaId = $aziendaEsistente;
-                } else {
-                    $partitaIva = str_pad((string) random_int(0, 99999999999), 11, '0', STR_PAD_LEFT);
-                    $stmtInsAzienda = $pdo->prepare(
-                        'INSERT INTO aziende (partita_iva, ragione_sociale, tipologia_azienda, organico_medio, fatturato)
-                         VALUES (:partita_iva, :ragione_sociale, :tipologia_azienda, :organico_medio, :fatturato)'
-                    );
-                    $stmtInsAzienda->execute([
-                        ':partita_iva' => $partitaIva,
-                        ':ragione_sociale' => mb_substr($nuovaAzienda, 0, 30),
-                        ':tipologia_azienda' => 'Cliente',
-                        ':organico_medio' => 'N/D',
-                        ':fatturato' => 0,
-                    ]);
-                    $aziendaId = (int) $pdo->lastInsertId();
-                }
-            }
-        }
 
         if(!$errors){
             $tipoDettaglio=$servizio==='SISTEMI DI GESTIONE AZIENDALE'?'SottoServizio':'Servizio Specifico';
@@ -294,7 +334,7 @@ renderHeader('Simplex - Offerte');
 <div class="col-12"><label class="form-label">Specifiche Oggetto</label><textarea class="form-control" name="specifiche_oggetto" rows="2"><?= htmlspecialchars($formData['specifiche_oggetto']??'') ?></textarea></div>
 <div class="col-md-6"><label class="form-label">Sede di erogazione del servizio</label><input class="form-control" name="sede_erogazione_servizio" value="<?= htmlspecialchars($formData['sede_erogazione_servizio']??'') ?>"></div>
 <div class="col-md-6"><label class="form-label">Azienda *</label><select class="form-select" name="azienda_id" id="azienda_id"><option value="">-- Seleziona --</option><?php foreach($aziendeTutte as $az): ?><option value="<?= (int)$az['id'] ?>" <?= ((int)($formData['azienda_id']??0)===(int)$az['id'])?'selected':'' ?>><?= htmlspecialchars($az['ragione_sociale']) ?></option><?php endforeach; ?></select></div>
-<div class="col-md-6"><label class="form-label">Nuova Azienda (se non presente)</label><input class="form-control" name="nuova_azienda_ragione_sociale" id="nuova_azienda_ragione_sociale" maxlength="30" placeholder="Inserisci ragione sociale"></div>
+<div class="col-md-6 d-flex align-items-end"><button type="button" class="btn btn-outline-primary" data-bs-toggle="modal" data-bs-target="#modalNuovaAzienda">+ Nuova Azienda</button></div>
 <div class="col-md-3"><label class="form-label">RCO *</label><select class="form-select" name="rco_utente_id" required><option value="">-- Seleziona --</option><?php foreach($utenti as $u): ?><option value="<?= (int)$u['id'] ?>" <?= ((int)($formData['rco_utente_id']??0)===(int)$u['id'])?'selected':'' ?>><?= htmlspecialchars($u['nome'].' '.$u['cognome']) ?></option><?php endforeach; ?></select></div>
 <div class="col-md-3"><label class="form-label">Segnalato da</label><select class="form-select" name="segnalato_da_utente_id"><option value="">-- Seleziona --</option><?php foreach($utenti as $u): ?><option value="<?= (int)$u['id'] ?>" <?= ((int)($formData['segnalato_da_utente_id']??0)===(int)$u['id'])?'selected':'' ?>><?= htmlspecialchars($u['nome'].' '.$u['cognome']) ?></option><?php endforeach; ?></select></div>
 <div class="col-md-4"><label class="form-label">Data Offerta *</label><input type="date" class="form-control" id="data_offerta" name="data_offerta" required value="<?= htmlspecialchars($formData['data_offerta']??'') ?>"></div>
@@ -325,6 +365,42 @@ renderHeader('Simplex - Offerte');
 <?php foreach($offerte as $offerta): ?><tr><td><?= htmlspecialchars($offerta['protocollo']) ?></td><td><span class="badge text-bg-<?= $offerta['stato']==='Aggiudicata'?'success':($offerta['stato']==='Scaduta'?'secondary':'primary') ?>"><?= htmlspecialchars($offerta['stato']) ?></span></td><td><?= htmlspecialchars($offerta['servizio']) ?></td><td><?= htmlspecialchars($offerta['azienda_nome'] ?? '-') ?></td><td><?= htmlspecialchars($offerta['data_offerta']??'-') ?></td><td><?= htmlspecialchars($offerta['data_scadenza']??'-') ?></td><td><?= htmlspecialchars($offerta['commessa_protocollo']??'-') ?></td><td><?= htmlspecialchars($offerta['commessa_consulente']??'-') ?></td><td><div class="d-flex gap-1"><a class="btn btn-sm btn-outline-primary" href="offerte.php?edit=<?= (int)$offerta['id'] ?>">Modifica</a><a class="btn btn-sm btn-outline-dark" href="lavorazioni.php?offerta_id=<?= (int)$offerta['id'] ?>">Lavorazioni</a><form method="post" onsubmit="return confirm('Confermi eliminazione offerta?');"><input type="hidden" name="azione" value="delete"><input type="hidden" name="id" value="<?= (int)$offerta['id'] ?>"><button class="btn btn-sm btn-outline-danger" type="submit">Elimina</button></form></div></td></tr><?php endforeach; ?>
 </tbody></table></div></div>
 </main></div></div>
+
+<div class="modal fade" id="modalNuovaAzienda" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <form id="formNuovaAzienda">
+        <div class="modal-header">
+          <h5 class="modal-title">Nuova Azienda</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <input type="hidden" name="azione" value="ajax_create_azienda">
+          <div id="nuovaAziendaError" class="alert alert-danger d-none"></div>
+          <div class="row g-2">
+            <div class="col-md-4"><label class="form-label">Partita IVA *</label><input class="form-control" name="partita_iva" maxlength="11" required></div>
+            <div class="col-md-4"><label class="form-label">Codice Fiscale</label><input class="form-control" name="codice_fiscale" maxlength="16"></div>
+            <div class="col-md-4"><label class="form-label">Ragione Sociale *</label><input class="form-control" name="ragione_sociale" maxlength="30" required></div>
+            <div class="col-md-6"><label class="form-label">Tipologia Azienda *</label><select class="form-select" name="tipologia_azienda[]" multiple required><?php foreach($TIPOLOGIE_AZIENDA as $tip): ?><option value="<?= htmlspecialchars($tip) ?>"><?= htmlspecialchars($tip) ?></option><?php endforeach; ?></select></div>
+            <div class="col-md-3"><label class="form-label">Organico Medio *</label><input class="form-control" name="organico_medio" maxlength="30" required></div>
+            <div class="col-md-3"><label class="form-label">Fatturato *</label><input type="number" step="0.01" min="0" class="form-control" name="fatturato" required></div>
+            <div class="col-md-4"><label class="form-label">Telefono</label><input class="form-control" name="telefono"></div>
+            <div class="col-md-4"><label class="form-label">Email</label><input type="email" class="form-control" name="email"></div>
+            <div class="col-md-4"><label class="form-label">PEC</label><input class="form-control" name="pec"></div>
+            <div class="col-md-6"><label class="form-label">Località</label><input class="form-control" name="localita"></div>
+            <div class="col-md-2"><label class="form-label">Prov.</label><input class="form-control" name="provincia" maxlength="2"></div>
+            <div class="col-md-4"><label class="form-label">Categoria</label><input class="form-control" name="categoria"></div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Annulla</button>
+          <button type="submit" class="btn btn-primary">Salva Azienda</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
 <script>
 const dettagliPerServizio = <?= json_encode($DETTAGLI_SERVIZIO, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
 const dettaglioPreselezionato = <?= json_encode($formData['dettaglio_servizio'] ?? '', JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
@@ -337,10 +413,31 @@ if(dataOff&&valIn&&scadIn){valIn.addEventListener('input',()=>{if(dataOff.value&
 const statoSel=document.getElementById('stato_offerta'); const consulBox=document.getElementById('box-consulente'); const consSel=document.getElementById('consulente_incaricato');
 function toggleCons(){ if(!statoSel||!consulBox||!consSel) return; const on=statoSel.value==='Aggiudicata'; consulBox.style.display=on?'block':'none'; consSel.required=on; if(!on) consSel.value=''; }
 if(statoSel){statoSel.addEventListener('change',toggleCons); toggleCons();}
-const aziendaSel=document.getElementById('azienda_id'); const nuovaAziendaInput=document.getElementById('nuova_azienda_ragione_sociale');
-if(aziendaSel&&nuovaAziendaInput){
-    aziendaSel.addEventListener('change',()=>{ if(aziendaSel.value!==''){ nuovaAziendaInput.value=''; }});
-    nuovaAziendaInput.addEventListener('input',()=>{ if(nuovaAziendaInput.value.trim()!==''){ aziendaSel.value=''; }});
+const aziendaSel=document.getElementById('azienda_id');
+const formNuovaAzienda=document.getElementById('formNuovaAzienda');
+const nuovaAziendaError=document.getElementById('nuovaAziendaError');
+if(formNuovaAzienda&&aziendaSel){
+    formNuovaAzienda.addEventListener('submit',async (e)=>{
+        e.preventDefault();
+        nuovaAziendaError.classList.add('d-none');
+        const fd=new FormData(formNuovaAzienda);
+        const resp=await fetch('offerte.php',{method:'POST',body:fd});
+        const data=await resp.json();
+        if(!data.ok){
+            nuovaAziendaError.textContent=(data.errors||['Errore nel salvataggio azienda.']).join(' ');
+            nuovaAziendaError.classList.remove('d-none');
+            return;
+        }
+        const opt=document.createElement('option');
+        opt.value=String(data.id);
+        opt.textContent=data.ragione_sociale;
+        opt.selected=true;
+        aziendaSel.appendChild(opt);
+        formNuovaAzienda.reset();
+        const modalEl=document.getElementById('modalNuovaAzienda');
+        const modal=bootstrap.Modal.getInstance(modalEl);
+        if(modal){ modal.hide(); }
+    });
 }
 </script>
 <?php renderFooter(); ?>
