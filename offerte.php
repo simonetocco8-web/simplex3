@@ -314,10 +314,9 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
                 $offertaIdForCommessa=(int)$pdo->lastInsertId(); $success='Offerta creata correttamente con protocollo: '.$protocollo;
             }
 
-            if($stato==='Aggiudicata'){
-                $nuovaCommessa = ensureCommessa($pdo, $offertaIdForCommessa, $consulenteIncaricato);
-                if($nuovaCommessa){ $success .= ' | Commessa generata: ' . $nuovaCommessa; }
-            }
+            $consulentePerCommessa = $consulenteIncaricato !== '' ? $consulenteIncaricato : 'N/D';
+            $nuovaCommessa = ensureCommessa($pdo, $offertaIdForCommessa, $consulentePerCommessa);
+            if($nuovaCommessa){ $success .= ' | Commessa generata: ' . $nuovaCommessa; }
 
             $momData = $_POST['momento_data_momento'] ?? [];
             $momTip = $_POST['momento_tipologia'] ?? [];
