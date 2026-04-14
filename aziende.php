@@ -3,7 +3,7 @@ require_once __DIR__ . '/config/database.php';
 require_once __DIR__ . '/includes/layout.php';
 require_once __DIR__ . '/includes/auth.php';
 
-$TIPOLOGIE_AZIENDA = ['Potenziale Cliente', 'Promotore', 'Fornitore', 'Partner'];
+$TIPOLOGIE_AZIENDA = ['Promotore', 'Fornitore', 'Partner'];
 $CATEGORIE_MERCEOLOGICHE = [
     'Agroalimentare', 'Commerciale', 'Commercio', 'Edile', 'Ente', 'Formazione', 'Fornitore', 'Impiantistica',
     'Manifatturiere', 'Officine', 'Privato', 'Sanità', 'Servizi', 'Strategico', 'Trasporti', 'Turismo',
