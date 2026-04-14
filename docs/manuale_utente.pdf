@@ -1,0 +1,412 @@
+%PDF-1.4
+%
+1 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+2 0 obj
+<< /Length 1529 >>
+stream
+BT
+/F1 11 Tf
+1 0 0 1 40 802 Tm
+15 TL
+(MANUALE UTENTE - SISTEMA SIMPLEX) Tj
+T*
+() Tj
+T*
+(Versione: 1.0) Tj
+T*
+(Data: 09/04/2026) Tj
+T*
+() Tj
+T*
+(1. INTRODUZIONE) Tj
+T*
+(Simplex  un sistema web amministrativo per la gestione operativa e commerciale di:) Tj
+T*
+(- Utenti) Tj
+T*
+(- Aziende) Tj
+T*
+(- Enti di Certificazione) Tj
+T*
+(- Offerte) Tj
+T*
+(- Commesse) Tj
+T*
+(- Momenti di Lavorazione) Tj
+T*
+(- Fatture) Tj
+T*
+(- Pagamenti) Tj
+T*
+(- Produzione \(report amministrativo\)) Tj
+T*
+() Tj
+T*
+(Il sistema  pensato per tracciare l'intero ciclo: dall'offerta, alla commessa, alla) Tj
+T*
+(fatturazione e incasso.) Tj
+T*
+() Tj
+T*
+(2. ACCESSO AL SISTEMA) Tj
+T*
+(2.1 LOGIN) Tj
+T*
+(1. Apri la pagina di accesso.) Tj
+T*
+(2. Inserisci username e password.) Tj
+T*
+(3. Premi Accedi.) Tj
+T*
+() Tj
+T*
+(2.2 RECUPERO CREDENZIALI) Tj
+T*
+(Se non ricordi la password usa la funzione Recupera credenziali.) Tj
+T*
+() Tj
+T*
+(2.3 LOGOUT) Tj
+T*
+(Usa il pulsante Logout nel men laterale.) Tj
+T*
+() Tj
+T*
+(3. NAVIGAZIONE E MEN) Tj
+T*
+(Il men laterale  organizzato in:) Tj
+T*
+(- Bacheca) Tj
+T*
+(- Offerte) Tj
+T*
+(- Commesse) Tj
+T*
+(- Anagrafiche \(a tendina\):) Tj
+T*
+(  - Utenti) Tj
+T*
+(  - Aziende) Tj
+T*
+(  - Enti di Certificazione) Tj
+T*
+(- Amministrazione \(a tendina\):) Tj
+T*
+(  - Produzione) Tj
+T*
+(  - Fatture) Tj
+T*
+(  - Pagamenti) Tj
+T*
+() Tj
+T*
+(4. BACHECA) Tj
+T*
+(La Bacheca mostra una vista sintetica delle informazioni principali.) Tj
+T*
+(In base al ruolo, l'utente pu visualizzare commesse assegnate o riepiloghi utili.) Tj
+T*
+() Tj
+ET
+endstream
+endobj
+3 0 obj
+<< /Length 1753 >>
+stream
+BT
+/F1 11 Tf
+1 0 0 1 40 802 Tm
+15 TL
+(5. ANAGRAFICHE) Tj
+T*
+(5.1 UTENTI) Tj
+T*
+(Funzioni principali:) Tj
+T*
+(- Inserimento nuovo utente) Tj
+T*
+(- Modifica dati utente) Tj
+T*
+(- Attivazione/disattivazione) Tj
+T*
+(- Gestione ruoli) Tj
+T*
+() Tj
+T*
+(5.2 AZIENDE) Tj
+T*
+(Funzioni principali:) Tj
+T*
+(- Inserimento nuova azienda) Tj
+T*
+(- Modifica anagrafica azienda) Tj
+T*
+(- Eliminazione azienda) Tj
+T*
+(- Ricerca/filtro) Tj
+T*
+() Tj
+T*
+(5.3 ENTI DI CERTIFICAZIONE) Tj
+T*
+(Funzioni principali:) Tj
+T*
+(- Inserimento di un ente con denominazione) Tj
+T*
+(- Visualizzazione elenco enti) Tj
+T*
+(- Eliminazione ente) Tj
+T*
+() Tj
+T*
+(6. OFFERTE) Tj
+T*
+(Nella sezione Offerte puoi:) Tj
+T*
+(- Creare una nuova offerta) Tj
+T*
+(- Compilare servizio, dettaglio, stato e dati economici) Tj
+T*
+(- Aggiornare offerte esistenti) Tj
+T*
+(- Cercare tramite filtri) Tj
+T*
+() Tj
+T*
+(6.1 GENERAZIONE COMMESSA) Tj
+T*
+(Quando un'offerta viene aggiudicata/gestita secondo il flusso previsto, la commessa collegata) Tj
+T*
+(viene resa disponibile in sezione Commesse.) Tj
+T*
+() Tj
+T*
+(7. COMMESSE) Tj
+T*
+(La sezione Commesse consente di:) Tj
+T*
+(- Modificare i dati della commessa) Tj
+T*
+(- Gestire budget e dati amministrativi) Tj
+T*
+(- Caricare file allegati) Tj
+T*
+(- Gestire i Momenti di Lavorazione) Tj
+T*
+() Tj
+T*
+(7.1 ENTI DI CERTIFICAZIONE IN COMMESSA) Tj
+T*
+(Se la commessa deriva da un'offerta con servizio SISTEMI DI GESTIONE AZIENDALE, sono) Tj
+T*
+(disponibili i campi:) Tj
+T*
+(- Ente di Certificazione \(men a tendina\)) Tj
+T*
+(- Importo dell'Ente di Certificazione \(Euro\)) Tj
+T*
+() Tj
+T*
+(7.2 MOMENTI DI LAVORAZIONE) Tj
+T*
+(Per ogni commessa puoi inserire momenti con:) Tj
+T*
+(- Data) Tj
+T*
+(- Tipologia \(Apertura/Chiusura\)) Tj
+T*
+(- Valore giornaliero uomo) Tj
+ET
+endstream
+endobj
+4 0 obj
+<< /Length 1818 >>
+stream
+BT
+/F1 11 Tf
+1 0 0 1 40 802 Tm
+15 TL
+(- Ore/Giorni) Tj
+T*
+(- Numero incontri) Tj
+T*
+(- Ore studio) Tj
+T*
+(- Data prevista) Tj
+T*
+() Tj
+T*
+(7.3 GENERAZIONE AUTOMATICA FATTURA) Tj
+T*
+(Quando crei un momento con tipologia Chiusura, il sistema genera automaticamente una fattura) Tj
+T*
+(con:) Tj
+T*
+(- Numero formato `ID_UNIVOCO/ANNO_CORRENTE`) Tj
+T*
+(- Importo calcolato dal totale del momento di lavorazione) Tj
+T*
+() Tj
+T*
+(Nella tabella dei momenti  presente l'icona per aprire la fattura collegata.) Tj
+T*
+() Tj
+T*
+(8. FATTURE) Tj
+T*
+(La sezione Fatture contiene:) Tj
+T*
+(- Elenco di tutte le fatture generate) Tj
+T*
+(- Filtri di ricerca) Tj
+T*
+(- Dettaglio della singola fattura) Tj
+T*
+() Tj
+T*
+(Per ogni fattura  disponibile l'icona banconota per registrare il pagamento.) Tj
+T*
+() Tj
+T*
+(8.1 REGISTRAZIONE PAGAMENTO DA FATTURA) Tj
+T*
+(Cliccando l'icona banconota si apre un popup con:) Tj
+T*
+(- Data ricezione pagamento \(datepicker\)) Tj
+T*
+(- Modalit pagamento:) Tj
+T*
+(  - Contanti) Tj
+T*
+(  - Bonifico) Tj
+T*
+(  - Carta di Credito) Tj
+T*
+() Tj
+T*
+(Confermando, il sistema salva il pagamento e aggiorna lo stato della fattura.) Tj
+T*
+() Tj
+T*
+(9. PAGAMENTI) Tj
+T*
+(La sezione Pagamenti mostra tutti i pagamenti registrati con:) Tj
+T*
+(- Numero fattura) Tj
+T*
+(- Commessa) Tj
+T*
+(- Importo) Tj
+T*
+(- Data pagamento) Tj
+T*
+(- Modalit pagamento) Tj
+T*
+() Tj
+T*
+(Sono disponibili filtri per ricercare pagamenti specifici.) Tj
+T*
+() Tj
+T*
+(10. PRODUZIONE \(AMMINISTRAZIONE\)) Tj
+T*
+(La sezione Produzione permette una vista amministrativa delle commesse:) Tj
+T*
+(- Elenco commesse) Tj
+T*
+(- Filtri per campi caratteristici) Tj
+T*
+(- Totale budget in euro delle righe visualizzate) Tj
+T*
+() Tj
+T*
+(11. ALLEGATI COMMESSA) Tj
+T*
+(Nella commessa puoi caricare allegati.) Tj
+T*
+(Per ogni file sono disponibili:) Tj
+ET
+endstream
+endobj
+5 0 obj
+<< /Length 864 >>
+stream
+BT
+/F1 11 Tf
+1 0 0 1 40 802 Tm
+15 TL
+(- Visualizzazione) Tj
+T*
+(- Download) Tj
+T*
+() Tj
+T*
+(12. BUONE PRATICHE OPERATIVE) Tj
+T*
+(- Compilare sempre i campi obbligatori.) Tj
+T*
+(- Verificare i dati economici prima del salvataggio.) Tj
+T*
+(- Registrare pagamenti appena ricevuti.) Tj
+T*
+(- Usare i filtri per controlli periodici \(Fatture/Pagamenti/Produzione\).) Tj
+T*
+() Tj
+T*
+(13. RISOLUZIONE PROBLEMI COMUNI) Tj
+T*
+(- Credenziali non valide: verificare username/password o usare recupero credenziali.) Tj
+T*
+(- Campi non salvati: controllare i messaggi di errore in pagina.) Tj
+T*
+(- Fattura non generata: verificare che il momento sia di tipo Chiusura.) Tj
+T*
+(- Pagamento non visibile: verificare conferma popup e filtri attivi.) Tj
+T*
+() Tj
+T*
+(14. SUPPORTO) Tj
+T*
+(Per problemi applicativi o richieste evolutive contattare l'amministratore di sistema.) Tj
+ET
+endstream
+endobj
+6 0 obj
+<< /Type /Page /Parent 6 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 1 0 R >> >> /Contents 2 0 R >>
+endobj
+7 0 obj
+<< /Type /Page /Parent 6 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 1 0 R >> >> /Contents 3 0 R >>
+endobj
+8 0 obj
+<< /Type /Page /Parent 6 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 1 0 R >> >> /Contents 4 0 R >>
+endobj
+9 0 obj
+<< /Type /Page /Parent 6 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 1 0 R >> >> /Contents 5 0 R >>
+endobj
+10 0 obj
+<< /Type /Pages /Kids [6 0 R 7 0 R 8 0 R 9 0 R] /Count 4 >>
+endobj
+11 0 obj
+<< /Type /Catalog /Pages 6 0 R >>
+endobj
+xref
+0 12
+0000000000 65535 f 
+0000000015 00000 n 
+0000000085 00000 n 
+0000001666 00000 n 
+0000003471 00000 n 
+0000005341 00000 n 
+0000006256 00000 n 
+0000006382 00000 n 
+0000006508 00000 n 
+0000006634 00000 n 
+0000006760 00000 n 
+0000006836 00000 n 
+trailer
+<< /Size 12 /Root 11 0 R >>
+startxref
+6886
+%%EOF
