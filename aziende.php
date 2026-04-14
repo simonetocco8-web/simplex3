@@ -82,6 +82,19 @@ $pdo->exec(
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
 );
 
+$pdo->exec(
+    "CREATE TABLE IF NOT EXISTS aziende_file (
+        id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+        azienda_id INT UNSIGNED NOT NULL,
+        nome_originale VARCHAR(255) NOT NULL,
+        nome_salvato VARCHAR(255) NOT NULL,
+        mime_type VARCHAR(100) NULL,
+        dimensione_bytes BIGINT UNSIGNED NOT NULL DEFAULT 0,
+        caricato_il TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT fk_aziende_file_azienda FOREIGN KEY (azienda_id) REFERENCES aziende(id) ON DELETE CASCADE
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
+);
+
 $utenti = $pdo->query('SELECT id, nome, cognome FROM utenti ORDER BY nome, cognome')->fetchAll();
 $aziendePromotori = $pdo->query("SELECT id, ragione_sociale FROM aziende WHERE FIND_IN_SET('Promotore', tipologia_azienda) > 0 ORDER BY ragione_sociale")->fetchAll();
 
@@ -91,11 +104,17 @@ $editId = isset($_GET['edit']) ? (int) $_GET['edit'] : 0;
 
 $aziendaInModifica = null;
 $aziendaInVisualizzazione = null;
+$filesAzienda = [];
 
 if ($viewId > 0) {
     $stmt = $pdo->prepare('SELECT * FROM aziende WHERE id = :id');
     $stmt->execute([':id' => $viewId]);
     $aziendaInVisualizzazione = $stmt->fetch();
+    if ($aziendaInVisualizzazione) {
+        $stmtFiles = $pdo->prepare('SELECT * FROM aziende_file WHERE azienda_id = :azienda_id ORDER BY caricato_il DESC');
+        $stmtFiles->execute([':azienda_id' => $viewId]);
+        $filesAzienda = $stmtFiles->fetchAll();
+    }
 }
 
 if ($editId > 0) {
@@ -116,6 +135,55 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $stmt = $pdo->prepare('DELETE FROM aziende WHERE id = :id');
             $stmt->execute([':id' => $idDelete]);
             $success = 'Azienda eliminata correttamente.';
+        }
+    }
+
+    if ($azione === 'upload_file') {
+        $idAzienda = (int) ($_POST['id'] ?? 0);
+        if ($idAzienda <= 0) {
+            $errors[] = 'Azienda non valida per upload file.';
+        } elseif (!isset($_FILES['allegato']) || !is_array($_FILES['allegato'])) {
+            $errors[] = 'Nessun file ricevuto.';
+        } else {
+            $file = $_FILES['allegato'];
+            if ((int) ($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
+                $errors[] = 'Errore durante il caricamento del file.';
+            } else {
+                $uploadBase = __DIR__ . '/uploads/aziende/' . $idAzienda;
+                if (!is_dir($uploadBase) && !mkdir($uploadBase, 0775, true) && !is_dir($uploadBase)) {
+                    $errors[] = 'Impossibile creare la cartella di upload.';
+                } else {
+                    $originalName = basename((string) $file['name']);
+                    $ext = pathinfo($originalName, PATHINFO_EXTENSION);
+                    $storedName = uniqid('file_', true) . ($ext ? '.' . $ext : '');
+                    $target = $uploadBase . '/' . $storedName;
+                    if (!move_uploaded_file((string) $file['tmp_name'], $target)) {
+                        $errors[] = 'Impossibile salvare il file sul server.';
+                    } else {
+                        $mime = function_exists('mime_content_type') ? mime_content_type($target) : null;
+                        $size = filesize($target);
+                        $stmtIns = $pdo->prepare(
+                            'INSERT INTO aziende_file (azienda_id, nome_originale, nome_salvato, mime_type, dimensione_bytes)
+                             VALUES (:azienda_id, :nome_originale, :nome_salvato, :mime_type, :dimensione_bytes)'
+                        );
+                        $stmtIns->execute([
+                            ':azienda_id' => $idAzienda,
+                            ':nome_originale' => $originalName,
+                            ':nome_salvato' => $storedName,
+                            ':mime_type' => $mime,
+                            ':dimensione_bytes' => (int) $size,
+                        ]);
+                        $success = 'File caricato correttamente.';
+                        $viewId = $idAzienda;
+                        $stmt = $pdo->prepare('SELECT * FROM aziende WHERE id = :id');
+                        $stmt->execute([':id' => $viewId]);
+                        $aziendaInVisualizzazione = $stmt->fetch();
+                        $stmtFiles = $pdo->prepare('SELECT * FROM aziende_file WHERE azienda_id = :azienda_id ORDER BY caricato_il DESC');
+                        $stmtFiles->execute([':azienda_id' => $viewId]);
+                        $filesAzienda = $stmtFiles->fetchAll();
+                    }
+                }
+            }
         }
     }
 
@@ -528,6 +596,38 @@ $formTipologie = isset($formData['tipologia_azienda']) ? explode(',', (string) $
                             <?php foreach ($aziendaInVisualizzazione as $campo => $valore): ?>
                                 <div class="col-md-4"><strong><?= htmlspecialchars((string)$campo) ?>:</strong> <?= htmlspecialchars((string)($valore ?? '-')) ?></div>
                             <?php endforeach; ?>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card mb-4">
+                    <div class="card-header">Documenti Azienda</div>
+                    <div class="card-body">
+                        <form method="post" enctype="multipart/form-data" class="row g-2 mb-3">
+                            <input type="hidden" name="azione" value="upload_file">
+                            <input type="hidden" name="id" value="<?= (int)$aziendaInVisualizzazione['id'] ?>">
+                            <div class="col-md-9"><input type="file" class="form-control" name="allegato" required></div>
+                            <div class="col-md-3 d-grid"><button class="btn btn-outline-primary" type="submit">Carica file</button></div>
+                        </form>
+                        <div class="table-responsive">
+                            <table class="table table-sm table-striped align-middle mb-0">
+                                <thead><tr><th>Nome file</th><th>Tipo</th><th>Dimensione</th><th>Caricato il</th><th>Azioni</th></tr></thead>
+                                <tbody>
+                                <?php if (!$filesAzienda): ?><tr><td colspan="5" class="text-center text-muted py-3">Nessun file caricato.</td></tr><?php endif; ?>
+                                <?php foreach ($filesAzienda as $file): ?>
+                                    <tr>
+                                        <td><?= htmlspecialchars($file['nome_originale']) ?></td>
+                                        <td><?= htmlspecialchars($file['mime_type'] ?? '-') ?></td>
+                                        <td><?= htmlspecialchars((string)$file['dimensione_bytes']) ?> bytes</td>
+                                        <td><?= htmlspecialchars($file['caricato_il']) ?></td>
+                                        <td>
+                                            <a class="btn btn-sm btn-outline-secondary" href="download_azienda_file.php?id=<?= (int)$file['id'] ?>&mode=view" target="_blank">Visualizza</a>
+                                            <a class="btn btn-sm btn-outline-primary" href="download_azienda_file.php?id=<?= (int)$file['id'] ?>&mode=download">Scarica</a>
+                                        </td>
+                                    </tr>
+                                <?php endforeach; ?>
+                                </tbody>
+                            </table>
                         </div>
                     </div>
                 </div>
