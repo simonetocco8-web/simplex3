@@ -258,7 +258,16 @@ if($viewId>0){
         $filesOfferta = $stmtFiles->fetchAll();
     }
 }
-if($editId>0){$st=$pdo->prepare('SELECT * FROM offerte WHERE id=:id');$st->execute([':id'=>$editId]);$offertaInModifica=$st->fetch();}
+if($editId>0){
+    $st=$pdo->prepare('SELECT * FROM offerte WHERE id=:id');
+    $st->execute([':id'=>$editId]);
+    $offertaInModifica=$st->fetch();
+    if ($offertaInModifica) {
+        $stmtFiles = $pdo->prepare('SELECT * FROM offerte_file WHERE offerta_id = :offerta_id ORDER BY caricato_il DESC');
+        $stmtFiles->execute([':offerta_id' => $editId]);
+        $filesOfferta = $stmtFiles->fetchAll();
+    }
+}
 $momentiOfferta = [];
 if ($editId > 0) {
     $stMom = $pdo->prepare('SELECT * FROM offerta_momenti_lavorazione WHERE offerta_id = :offerta_id ORDER BY id ASC');
@@ -483,13 +492,16 @@ renderHeader('Simplex - Offerte');
         </div>
     </div>
 </div>
+<?php endif; ?>
 
+<?php $offertaPerFile = $offertaInVisualizzazione ?: $offertaInModifica; ?>
+<?php if($offertaPerFile): ?>
 <div class="card mb-4">
     <div class="card-header">Documenti Offerta</div>
     <div class="card-body">
         <form method="post" enctype="multipart/form-data" class="row g-2 mb-3">
             <input type="hidden" name="azione" value="upload_file">
-            <input type="hidden" name="id" value="<?= (int)$offertaInVisualizzazione['id'] ?>">
+            <input type="hidden" name="id" value="<?= (int)$offertaPerFile['id'] ?>">
             <div class="col-md-9"><input type="file" class="form-control" name="allegato" required></div>
             <div class="col-md-3 d-grid"><button class="btn btn-outline-primary" type="submit">Carica file</button></div>
         </form>
