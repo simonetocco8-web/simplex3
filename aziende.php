@@ -300,16 +300,16 @@ foreach ($filters as $field) {
     }
 
     if ($field === 'tipologia_azienda') {
-        $where[] = "FIND_IN_SET(:$key, tipologia_azienda) > 0";
+        $where[] = "FIND_IN_SET(:$key, a.tipologia_azienda) > 0";
         $params[":$key"] = $value;
     } elseif (in_array($field, ['rco_utente_id', 'segnalata_da_utente_id', 'promotore_azienda_id'], true)) {
-        $where[] = "$field = :$key";
+        $where[] = "a.$field = :$key";
         $params[":$key"] = (int) $value;
     } elseif ($field === 'fatturato') {
-        $where[] = "$field = :$key";
+        $where[] = "a.$field = :$key";
         $params[":$key"] = str_replace(',', '.', $value);
     } else {
-        $where[] = "$field LIKE :$key";
+        $where[] = "a.$field LIKE :$key";
         $params[":$key"] = '%' . $value . '%';
     }
 }
