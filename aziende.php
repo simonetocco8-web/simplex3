@@ -4,6 +4,7 @@ require_once __DIR__ . '/includes/layout.php';
 require_once __DIR__ . '/includes/auth.php';
 
 $TIPOLOGIE_AZIENDA = ['Promotore', 'Fornitore', 'Partner'];
+$REGIONI_ITALIA = ['Abruzzo', 'Basilicata', 'Calabria', 'Campania', 'Emilia-Romagna', 'Friuli Venezia Giulia', 'Lazio', 'Liguria', 'Lombardia', 'Marche', 'Molise', 'Piemonte', 'Puglia', 'Sardegna', 'Sicilia', 'Toscana', 'Trentino-Alto Adige/Südtirol', 'Umbria', "Valle d'Aosta/Vallée d'Aoste", 'Veneto'];
 $CATEGORIE_MERCEOLOGICHE = [
     'Agroalimentare', 'Commerciale', 'Commercio', 'Edile', 'Ente', 'Formazione', 'Fornitore', 'Impiantistica',
     'Manifatturiere', 'Officine', 'Privato', 'Sanità', 'Servizi', 'Strategico', 'Trasporti', 'Turismo',
@@ -81,6 +82,14 @@ $pdo->exec(
         CONSTRAINT fk_azienda_promotore FOREIGN KEY (promotore_azienda_id) REFERENCES aziende(id) ON DELETE SET NULL
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
 );
+
+$columnsAziende = $pdo->query('SHOW COLUMNS FROM aziende')->fetchAll(PDO::FETCH_COLUMN, 0);
+if (!in_array('regione', $columnsAziende, true)) {
+    $pdo->exec("ALTER TABLE aziende ADD COLUMN regione VARCHAR(60) NULL AFTER cap");
+}
+if (!in_array('comune', $columnsAziende, true)) {
+    $pdo->exec("ALTER TABLE aziende ADD COLUMN comune VARCHAR(120) NULL AFTER provincia");
+}
 
 $pdo->exec(
     "CREATE TABLE IF NOT EXISTS aziende_file (
@@ -202,8 +211,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $via = trim($_POST['via'] ?? '');
         $numeroCivico = trim($_POST['numero_civico'] ?? '');
         $cap = trim($_POST['cap'] ?? '');
-        $localita = trim($_POST['localita'] ?? '');
+        $regione = trim($_POST['regione'] ?? '');
         $provincia = strtoupper(trim($_POST['provincia'] ?? ''));
+        $comune = trim($_POST['comune'] ?? '');
         $rcoUtenteId = ($_POST['rco_utente_id'] ?? '') !== '' ? (int) $_POST['rco_utente_id'] : null;
         $segnalataDaUtenteId = ($_POST['segnalata_da_utente_id'] ?? '') !== '' ? (int) $_POST['segnalata_da_utente_id'] : null;
         $categoria = trim($_POST['categoria'] ?? '');
@@ -275,8 +285,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 ':via' => $via !== '' ? $via : null,
                 ':numero_civico' => $numeroCivico !== '' ? $numeroCivico : null,
                 ':cap' => $cap !== '' ? $cap : null,
-                ':localita' => $localita !== '' ? $localita : null,
+                ':localita' => $comune !== '' ? $comune : null,
+                ':regione' => $regione !== '' ? $regione : null,
                 ':provincia' => $provincia !== '' ? $provincia : null,
+                ':comune' => $comune !== '' ? $comune : null,
                 ':rco_utente_id' => $rcoUtenteId,
                 ':segnalata_da_utente_id' => $segnalataDaUtenteId,
                 ':categoria' => $categoria !== '' ? $categoria : null,
@@ -305,7 +317,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             numero_civico = :numero_civico,
                             cap = :cap,
                             localita = :localita,
+                            regione = :regione,
                             provincia = :provincia,
+                            comune = :comune,
                             rco_utente_id = :rco_utente_id,
                             segnalata_da_utente_id = :segnalata_da_utente_id,
                             categoria = :categoria,
@@ -321,12 +335,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             } else {
                 $sql = 'INSERT INTO aziende (
                             partita_iva, codice_fiscale, ragione_sociale, iban, tipologia_azienda, codice_fatturazione,
-                            telefono, pec, email, url_sito, via, numero_civico, cap, localita, provincia,
+                            telefono, pec, email, url_sito, via, numero_civico, cap, localita, regione, provincia, comune,
                             rco_utente_id, segnalata_da_utente_id, categoria, ea, organico_medio, fatturato,
                             conosciuto_come, principali_prodotti, note, promotore_azienda_id
                         ) VALUES (
                             :partita_iva, :codice_fiscale, :ragione_sociale, :iban, :tipologia_azienda, :codice_fatturazione,
-                            :telefono, :pec, :email, :url_sito, :via, :numero_civico, :cap, :localita, :provincia,
+                            :telefono, :pec, :email, :url_sito, :via, :numero_civico, :cap, :localita, :regione, :provincia, :comune,
                             :rco_utente_id, :segnalata_da_utente_id, :categoria, :ea, :organico_medio, :fatturato,
                             :conosciuto_come, :principali_prodotti, :note, :promotore_azienda_id
                         )';
@@ -353,7 +367,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 $filters = [
     'partita_iva', 'codice_fiscale', 'ragione_sociale', 'iban', 'tipologia_azienda', 'codice_fatturazione', 'telefono',
-    'pec', 'email', 'url_sito', 'via', 'numero_civico', 'cap', 'localita', 'provincia', 'categoria', 'ea',
+    'pec', 'email', 'url_sito', 'via', 'numero_civico', 'cap', 'localita', 'regione', 'provincia', 'comune', 'categoria', 'ea',
     'organico_medio', 'fatturato', 'conosciuto_come', 'principali_prodotti', 'note', 'rco_utente_id',
     'segnalata_da_utente_id', 'promotore_azienda_id',
 ];
@@ -508,8 +522,27 @@ $formTipologie = isset($formData['tipologia_azienda']) ? explode(',', (string) $
                             <div class="col-md-4"><label class="form-label">Via</label><input class="form-control" name="via" value="<?= htmlspecialchars($formData['via'] ?? '') ?>"></div>
                             <div class="col-md-2"><label class="form-label">Numero civico</label><input class="form-control" name="numero_civico" value="<?= htmlspecialchars($formData['numero_civico'] ?? '') ?>"></div>
                             <div class="col-md-2"><label class="form-label">CAP</label><input class="form-control" name="cap" value="<?= htmlspecialchars($formData['cap'] ?? '') ?>"></div>
-                            <div class="col-md-4"><label class="form-label">Località</label><input class="form-control" name="localita" value="<?= htmlspecialchars($formData['localita'] ?? '') ?>"></div>
-                            <div class="col-md-2"><label class="form-label">Provincia</label><input class="form-control" name="provincia" maxlength="2" value="<?= htmlspecialchars($formData['provincia'] ?? '') ?>"></div>
+                            <div class="col-md-4">
+                                <label class="form-label">Regione</label>
+                                <select class="form-select js-regione" name="regione" data-selected="<?= htmlspecialchars($formData['regione'] ?? '') ?>">
+                                    <option value="">-- Seleziona --</option>
+                                    <?php foreach ($REGIONI_ITALIA as $regione): ?>
+                                        <option value="<?= htmlspecialchars($regione) ?>" <?= (($formData['regione'] ?? '') === $regione) ? 'selected' : '' ?>><?= htmlspecialchars($regione) ?></option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">Provincia</label>
+                                <select class="form-select js-provincia" name="provincia" data-selected="<?= htmlspecialchars($formData['provincia'] ?? '') ?>">
+                                    <option value="">-- Seleziona prima la regione --</option>
+                                </select>
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">Comuni</label>
+                                <select class="form-select js-comune" name="comune" data-selected="<?= htmlspecialchars($formData['comune'] ?? ($formData['localita'] ?? '')) ?>">
+                                    <option value="">-- Seleziona prima la provincia --</option>
+                                </select>
+                            </div>
 
                             <div class="col-md-4">
                                 <label class="form-label">RCO</label>
@@ -776,4 +809,86 @@ $formTipologie = isset($formData['tipologia_azienda']) ? explode(',', (string) $
         </main>
     </div>
 </div>
+<script>
+const comuniDatasetUrl = 'https://raw.githubusercontent.com/matteocontrini/comuni-json/master/comuni.json';
+let comuniItaliaCache = null;
+
+function normalizeProvincia(item) {
+    return (item?.provincia?.sigla || item?.sigla || '').toString().trim().toUpperCase();
+}
+
+function normalizeRegione(item) {
+    return (item?.regione?.nome || item?.regione || '').toString().trim();
+}
+
+function normalizeComune(item) {
+    return (item?.nome || item?.comune || '').toString().trim();
+}
+
+async function loadComuniDataset() {
+    if (comuniItaliaCache) return comuniItaliaCache;
+    const response = await fetch(comuniDatasetUrl);
+    if (!response.ok) throw new Error('Impossibile caricare dataset comuni/province.');
+    comuniItaliaCache = await response.json();
+    return comuniItaliaCache;
+}
+
+function fillSelectOptions(select, values, placeholder, selectedValue = '') {
+    if (!select) return;
+    const normalizedSelected = (selectedValue || '').toString();
+    select.innerHTML = `<option value="">${placeholder}</option>`;
+    values.forEach((value) => {
+        const option = document.createElement('option');
+        option.value = value;
+        option.textContent = value;
+        if (value === normalizedSelected) option.selected = true;
+        select.appendChild(option);
+    });
+}
+
+async function setupGeoSelectors(scope) {
+    const regioneSelect = scope.querySelector('.js-regione');
+    const provinciaSelect = scope.querySelector('.js-provincia');
+    const comuneSelect = scope.querySelector('.js-comune');
+    if (!regioneSelect || !provinciaSelect || !comuneSelect) return;
+
+    try {
+        const dataset = await loadComuniDataset();
+        const selectedProvincia = provinciaSelect.dataset.selected || '';
+        const selectedComune = comuneSelect.dataset.selected || '';
+
+        const refreshProvince = () => {
+            const regione = regioneSelect.value;
+            const province = [...new Set(dataset.filter((item) => normalizeRegione(item) === regione).map(normalizeProvincia).filter(Boolean))].sort();
+            fillSelectOptions(provinciaSelect, province, regione ? '-- Seleziona --' : '-- Seleziona prima la regione --', provinciaSelect.dataset.selected || '');
+            provinciaSelect.dataset.selected = '';
+            refreshComuni();
+        };
+
+        const refreshComuni = () => {
+            const regione = regioneSelect.value;
+            const provincia = provinciaSelect.value;
+            const comuni = [...new Set(dataset
+                .filter((item) => normalizeRegione(item) === regione && normalizeProvincia(item) === provincia)
+                .map(normalizeComune)
+                .filter(Boolean))]
+                .sort((a, b) => a.localeCompare(b, 'it'));
+            fillSelectOptions(comuneSelect, comuni, provincia ? '-- Seleziona --' : '-- Seleziona prima la provincia --', comuneSelect.dataset.selected || '');
+            comuneSelect.dataset.selected = '';
+        };
+
+        regioneSelect.addEventListener('change', refreshProvince);
+        provinciaSelect.addEventListener('change', refreshComuni);
+
+        if (selectedProvincia) provinciaSelect.dataset.selected = selectedProvincia;
+        if (selectedComune) comuneSelect.dataset.selected = selectedComune;
+        refreshProvince();
+    } catch (error) {
+        fillSelectOptions(provinciaSelect, [], 'Errore caricamento province');
+        fillSelectOptions(comuneSelect, [], 'Errore caricamento comuni');
+    }
+}
+
+document.querySelectorAll('form').forEach((form) => { setupGeoSelectors(form); });
+</script>
 <?php renderFooter(); ?>

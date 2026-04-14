@@ -18,9 +18,22 @@ $DETTAGLI_SERVIZIO = [
 ];
 $MODALITA_PAGAMENTO = ['30-60 FMDF','Bonifico Bancario f.m.v.f','da definire','RI.BA.','RID','rid 06 mensilità','rimessa diretta','Rimessa Diretta'];
 $TIPOLOGIE_AZIENDA = ['Promotore', 'Fornitore', 'Partner'];
+$REGIONI_ITALIA = ['Abruzzo', 'Basilicata', 'Calabria', 'Campania', 'Emilia-Romagna', 'Friuli Venezia Giulia', 'Lazio', 'Liguria', 'Lombardia', 'Marche', 'Molise', 'Piemonte', 'Puglia', 'Sardegna', 'Sicilia', 'Toscana', 'Trentino-Alto Adige/Südtirol', 'Umbria', "Valle d'Aosta/Vallée d'Aoste", 'Veneto'];
+
+function ensureAziendeGeoColumns(PDO $pdo): void
+{
+    $columns = $pdo->query('SHOW COLUMNS FROM aziende')->fetchAll(PDO::FETCH_COLUMN, 0);
+    if (!in_array('regione', $columns, true)) {
+        $pdo->exec("ALTER TABLE aziende ADD COLUMN regione VARCHAR(60) NULL AFTER cap");
+    }
+    if (!in_array('comune', $columns, true)) {
+        $pdo->exec("ALTER TABLE aziende ADD COLUMN comune VARCHAR(120) NULL AFTER provincia");
+    }
+}
 
 function creaAziendaRapida(PDO $pdo, array $input): array
 {
+    ensureAziendeGeoColumns($pdo);
     $partitaIva = preg_replace('/\D/', '', trim((string) ($input['partita_iva'] ?? '')));
     $ragioneSociale = trim((string) ($input['ragione_sociale'] ?? ''));
     $tipologie = $input['tipologia_azienda'] ?? [];
@@ -46,8 +59,8 @@ function creaAziendaRapida(PDO $pdo, array $input): array
     }
 
     $stmt = $pdo->prepare(
-        'INSERT INTO aziende (partita_iva, ragione_sociale, tipologia_azienda, organico_medio, fatturato, codice_fiscale, iban, codice_fatturazione, telefono, pec, email, url_sito, via, numero_civico, cap, localita, provincia, categoria, ea, conosciuto_come, principali_prodotti, note)
-         VALUES (:partita_iva, :ragione_sociale, :tipologia_azienda, :organico_medio, :fatturato, :codice_fiscale, :iban, :codice_fatturazione, :telefono, :pec, :email, :url_sito, :via, :numero_civico, :cap, :localita, :provincia, :categoria, :ea, :conosciuto_come, :principali_prodotti, :note)'
+        'INSERT INTO aziende (partita_iva, ragione_sociale, tipologia_azienda, organico_medio, fatturato, codice_fiscale, iban, codice_fatturazione, telefono, pec, email, url_sito, via, numero_civico, cap, localita, regione, provincia, comune, categoria, ea, conosciuto_come, principali_prodotti, note)
+         VALUES (:partita_iva, :ragione_sociale, :tipologia_azienda, :organico_medio, :fatturato, :codice_fiscale, :iban, :codice_fatturazione, :telefono, :pec, :email, :url_sito, :via, :numero_civico, :cap, :localita, :regione, :provincia, :comune, :categoria, :ea, :conosciuto_come, :principali_prodotti, :note)'
     );
     $stmt->execute([
         ':partita_iva' => $partitaIva,
@@ -65,8 +78,10 @@ function creaAziendaRapida(PDO $pdo, array $input): array
         ':via' => trim((string) ($input['via'] ?? '')) ?: null,
         ':numero_civico' => trim((string) ($input['numero_civico'] ?? '')) ?: null,
         ':cap' => trim((string) ($input['cap'] ?? '')) ?: null,
-        ':localita' => trim((string) ($input['localita'] ?? '')) ?: null,
+        ':localita' => trim((string) ($input['comune'] ?? '')) ?: null,
+        ':regione' => trim((string) ($input['regione'] ?? '')) ?: null,
         ':provincia' => trim((string) ($input['provincia'] ?? '')) ?: null,
+        ':comune' => trim((string) ($input['comune'] ?? '')) ?: null,
         ':categoria' => trim((string) ($input['categoria'] ?? '')) ?: null,
         ':ea' => trim((string) ($input['ea'] ?? '')) ?: null,
         ':conosciuto_come' => trim((string) ($input['conosciuto_come'] ?? '')) ?: null,
@@ -613,8 +628,27 @@ renderHeader('Simplex - Offerte');
             <div class="col-md-4"><label class="form-label">Telefono</label><input class="form-control" name="telefono"></div>
             <div class="col-md-4"><label class="form-label">Email</label><input type="email" class="form-control" name="email"></div>
             <div class="col-md-4"><label class="form-label">PEC</label><input class="form-control" name="pec"></div>
-            <div class="col-md-6"><label class="form-label">Località</label><input class="form-control" name="localita"></div>
-            <div class="col-md-2"><label class="form-label">Prov.</label><input class="form-control" name="provincia" maxlength="2"></div>
+            <div class="col-md-4">
+              <label class="form-label">Regione</label>
+              <select class="form-select js-regione" name="regione">
+                <option value="">-- Seleziona --</option>
+                <?php foreach($REGIONI_ITALIA as $regione): ?>
+                  <option value="<?= htmlspecialchars($regione) ?>"><?= htmlspecialchars($regione) ?></option>
+                <?php endforeach; ?>
+              </select>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">Provincia</label>
+              <select class="form-select js-provincia" name="provincia">
+                <option value="">-- Seleziona prima la regione --</option>
+              </select>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">Comuni</label>
+              <select class="form-select js-comune" name="comune">
+                <option value="">-- Seleziona prima la provincia --</option>
+              </select>
+            </div>
             <div class="col-md-4"><label class="form-label">Categoria</label><input class="form-control" name="categoria"></div>
           </div>
         </div>
@@ -642,7 +676,58 @@ if(statoSel){statoSel.addEventListener('change',toggleCons); toggleCons();}
 const aziendaSel=document.getElementById('azienda_id');
 const formNuovaAzienda=document.getElementById('formNuovaAzienda');
 const nuovaAziendaError=document.getElementById('nuovaAziendaError');
+
+const comuniDatasetUrl = 'https://raw.githubusercontent.com/matteocontrini/comuni-json/master/comuni.json';
+let comuniItaliaCache = null;
+function normalizeProvincia(item){ return (item?.provincia?.sigla || item?.sigla || '').toString().trim().toUpperCase(); }
+function normalizeRegione(item){ return (item?.regione?.nome || item?.regione || '').toString().trim(); }
+function normalizeComune(item){ return (item?.nome || item?.comune || '').toString().trim(); }
+async function loadComuniDataset(){
+    if(comuniItaliaCache) return comuniItaliaCache;
+    const response = await fetch(comuniDatasetUrl);
+    if(!response.ok) throw new Error('Impossibile caricare comuni/province');
+    comuniItaliaCache = await response.json();
+    return comuniItaliaCache;
+}
+function fillSelectOptions(select, values, placeholder){
+    if(!select) return;
+    select.innerHTML = `<option value="">${placeholder}</option>`;
+    values.forEach((value)=>{
+        const option=document.createElement('option');
+        option.value=value;
+        option.textContent=value;
+        select.appendChild(option);
+    });
+}
+async function setupGeoSelectors(scope){
+    const regioneSelect = scope.querySelector('.js-regione');
+    const provinciaSelect = scope.querySelector('.js-provincia');
+    const comuneSelect = scope.querySelector('.js-comune');
+    if(!regioneSelect||!provinciaSelect||!comuneSelect) return;
+    try{
+        const dataset = await loadComuniDataset();
+        const refreshProvince = ()=>{
+            const regione = regioneSelect.value;
+            const province = [...new Set(dataset.filter((item)=>normalizeRegione(item)===regione).map(normalizeProvincia).filter(Boolean))].sort();
+            fillSelectOptions(provinciaSelect, province, regione ? '-- Seleziona --' : '-- Seleziona prima la regione --');
+            fillSelectOptions(comuneSelect, [], '-- Seleziona prima la provincia --');
+        };
+        const refreshComuni = ()=>{
+            const regione = regioneSelect.value;
+            const provincia = provinciaSelect.value;
+            const comuni = [...new Set(dataset.filter((item)=>normalizeRegione(item)===regione && normalizeProvincia(item)===provincia).map(normalizeComune).filter(Boolean))]
+                .sort((a,b)=>a.localeCompare(b,'it'));
+            fillSelectOptions(comuneSelect, comuni, provincia ? '-- Seleziona --' : '-- Seleziona prima la provincia --');
+        };
+        regioneSelect.addEventListener('change',refreshProvince);
+        provinciaSelect.addEventListener('change',refreshComuni);
+    }catch(error){
+        fillSelectOptions(provinciaSelect, [], 'Errore caricamento province');
+        fillSelectOptions(comuneSelect, [], 'Errore caricamento comuni');
+    }
+}
 if(formNuovaAzienda&&aziendaSel){
+    setupGeoSelectors(formNuovaAzienda);
     formNuovaAzienda.addEventListener('submit',async (e)=>{
         e.preventDefault();
         nuovaAziendaError.classList.add('d-none');
