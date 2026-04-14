@@ -173,7 +173,7 @@ $pdo->exec("CREATE TABLE IF NOT EXISTS commessa_momenti_lavorazione (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     commessa_id INT UNSIGNED NOT NULL,
     data_momento DATE NOT NULL,
-    tipologia ENUM('Apertura', 'Chiusura') NOT NULL,
+    tipologia ENUM('Apertura', 'Consegna Doc di Sistema', 'Chiusura') NOT NULL,
     valore_giornaliero_uomo DECIMAL(12,2) NOT NULL,
     ore DECIMAL(8,2) NOT NULL DEFAULT 0,
     giorni DECIMAL(8,2) NOT NULL DEFAULT 0,
@@ -189,7 +189,7 @@ $pdo->exec("CREATE TABLE IF NOT EXISTS offerta_momenti_lavorazione (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     offerta_id INT UNSIGNED NOT NULL,
     data_momento DATE NOT NULL,
-    tipologia ENUM('Apertura', 'Chiusura') NOT NULL,
+    tipologia ENUM('Apertura', 'Consegna Doc di Sistema', 'Chiusura') NOT NULL,
     valore_giornaliero_uomo DECIMAL(12,2) NOT NULL,
     ore DECIMAL(8,2) NOT NULL DEFAULT 0,
     giorni DECIMAL(8,2) NOT NULL DEFAULT 0,
@@ -410,7 +410,7 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
                     $g = str_replace(',', '.', trim((string)($momGio[$i] ?? '0')));
                     if ($d === '' && $t === '' && $v === '') continue;
                     if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $d)) continue;
-                    if (!in_array($t, ['Apertura', 'Chiusura'], true)) continue;
+                    if (!in_array($t, ['Apertura', 'Consegna Doc di Sistema', 'Chiusura'], true)) continue;
                     if (!is_numeric($v) || (float)$v < 0) continue;
                     if (!is_numeric($o) || (float)$o < 0) $o = '0';
                     if (!is_numeric($g) || (float)$g < 0) $g = '0';
@@ -560,7 +560,7 @@ renderHeader('Simplex - Offerte');
             <?php foreach($momRows as $m): ?>
                 <tr>
                     <td><input type="date" class="form-control" name="momento_data_momento[]" value="<?= htmlspecialchars($m['data_momento'] ?? '') ?>"></td>
-                    <td><select class="form-select" name="momento_tipologia[]"><option value="Apertura" <?= (($m['tipologia'] ?? '')==='Apertura')?'selected':'' ?>>Apertura</option><option value="Chiusura" <?= (($m['tipologia'] ?? '')==='Chiusura')?'selected':'' ?>>Chiusura</option></select></td>
+                    <td><select class="form-select" name="momento_tipologia[]"><option value="Apertura" <?= (($m['tipologia'] ?? '')==='Apertura')?'selected':'' ?>>Apertura</option><option value="Consegna Doc di Sistema" <?= (($m['tipologia'] ?? '')==='Consegna Doc di Sistema')?'selected':'' ?>>Consegna Doc di Sistema</option><option value="Chiusura" <?= (($m['tipologia'] ?? '')==='Chiusura')?'selected':'' ?>>Chiusura</option></select></td>
                     <td><input type="number" min="0" step="0.01" class="form-control" name="momento_valore_giornaliero_uomo[]" value="<?= htmlspecialchars((string)($m['valore_giornaliero_uomo'] ?? '')) ?>"></td>
                     <td><input type="number" min="0" step="0.01" class="form-control" name="momento_ore[]" value="<?= htmlspecialchars((string)($m['ore'] ?? '0')) ?>"></td>
                     <td><input type="number" min="0" step="0.01" class="form-control" name="momento_giorni[]" value="<?= htmlspecialchars((string)($m['giorni'] ?? '0')) ?>"></td>
@@ -670,7 +670,7 @@ const btnAggiungiMomentoOfferta=document.getElementById('btn-aggiungi-momento-of
 if(tabellaMomentiOfferta&&btnAggiungiMomentoOfferta){
     btnAggiungiMomentoOfferta.addEventListener('click',()=>{
         const tr=document.createElement('tr');
-        tr.innerHTML='<td><input type=\"date\" class=\"form-control\" name=\"momento_data_momento[]\"></td><td><select class=\"form-select\" name=\"momento_tipologia[]\"><option value=\"Apertura\">Apertura</option><option value=\"Chiusura\">Chiusura</option></select></td><td><input type=\"number\" min=\"0\" step=\"0.01\" class=\"form-control\" name=\"momento_valore_giornaliero_uomo[]\"></td><td><input type=\"number\" min=\"0\" step=\"0.01\" class=\"form-control\" name=\"momento_ore[]\" value=\"0\"></td><td><input type=\"number\" min=\"0\" step=\"0.01\" class=\"form-control\" name=\"momento_giorni[]\" value=\"0\"></td><td><button type=\"button\" class=\"btn btn-sm btn-outline-danger btn-rimuovi-momento\">✕</button></td>';
+        tr.innerHTML='<td><input type=\"date\" class=\"form-control\" name=\"momento_data_momento[]\"></td><td><select class=\"form-select\" name=\"momento_tipologia[]\"><option value=\"Apertura\">Apertura</option><option value=\"Consegna Doc di Sistema\">Consegna Doc di Sistema</option><option value=\"Chiusura\">Chiusura</option></select></td><td><input type=\"number\" min=\"0\" step=\"0.01\" class=\"form-control\" name=\"momento_valore_giornaliero_uomo[]\"></td><td><input type=\"number\" min=\"0\" step=\"0.01\" class=\"form-control\" name=\"momento_ore[]\" value=\"0\"></td><td><input type=\"number\" min=\"0\" step=\"0.01\" class=\"form-control\" name=\"momento_giorni[]\" value=\"0\"></td><td><button type=\"button\" class=\"btn btn-sm btn-outline-danger btn-rimuovi-momento\">✕</button></td>';
         tabellaMomentiOfferta.appendChild(tr);
     });
     tabellaMomentiOfferta.addEventListener('click',(e)=>{
