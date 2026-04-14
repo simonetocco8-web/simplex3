@@ -200,6 +200,17 @@ $pdo->exec("CREATE TABLE IF NOT EXISTS offerta_momenti_lavorazione (
     CONSTRAINT fk_offerta_momento_offerta FOREIGN KEY (offerta_id) REFERENCES offerte(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
 
+$pdo->exec("CREATE TABLE IF NOT EXISTS offerte_file (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    offerta_id INT UNSIGNED NOT NULL,
+    nome_originale VARCHAR(255) NOT NULL,
+    nome_salvato VARCHAR(255) NOT NULL,
+    mime_type VARCHAR(100) NULL,
+    dimensione_bytes BIGINT UNSIGNED NOT NULL DEFAULT 0,
+    caricato_il TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_offerte_file_offerta FOREIGN KEY (offerta_id) REFERENCES offerte(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+
 $migrations=[
     'stato'=>"ALTER TABLE offerte ADD COLUMN stato VARCHAR(20) NOT NULL DEFAULT 'In Lavorazione' AFTER dettaglio_servizio",
     'consulente_incaricato'=>"ALTER TABLE offerte ADD COLUMN consulente_incaricato VARCHAR(100) NULL AFTER sconto_percentuale",
@@ -236,7 +247,17 @@ if ((bool)$pdo->query("SHOW TABLES LIKE 'aziende'")->fetchColumn()) {
 
 $action=$_GET['action']??'list'; $viewId=(int)($_GET['view']??0); $editId=(int)($_GET['edit']??0);
 $offertaInModifica=null; $offertaInVisualizzazione=null;
-if($viewId>0){$st=$pdo->prepare('SELECT o.*, c.protocollo AS commessa_protocollo, c.consulente_nome AS commessa_consulente FROM offerte o LEFT JOIN commesse c ON c.offerta_id=o.id WHERE o.id=:id');$st->execute([':id'=>$viewId]);$offertaInVisualizzazione=$st->fetch();}
+$filesOfferta = [];
+if($viewId>0){
+    $st=$pdo->prepare('SELECT o.*, c.protocollo AS commessa_protocollo, c.consulente_nome AS commessa_consulente FROM offerte o LEFT JOIN commesse c ON c.offerta_id=o.id WHERE o.id=:id');
+    $st->execute([':id'=>$viewId]);
+    $offertaInVisualizzazione=$st->fetch();
+    if ($offertaInVisualizzazione) {
+        $stmtFiles = $pdo->prepare('SELECT * FROM offerte_file WHERE offerta_id = :offerta_id ORDER BY caricato_il DESC');
+        $stmtFiles->execute([':offerta_id' => $viewId]);
+        $filesOfferta = $stmtFiles->fetchAll();
+    }
+}
 if($editId>0){$st=$pdo->prepare('SELECT * FROM offerte WHERE id=:id');$st->execute([':id'=>$editId]);$offertaInModifica=$st->fetch();}
 $momentiOfferta = [];
 if ($editId > 0) {
@@ -256,6 +277,51 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
         $result = creaAziendaRapida($pdo, $_POST);
         echo json_encode($result, JSON_UNESCAPED_UNICODE);
         exit;
+    }
+    if ($azione === 'upload_file') {
+        $idOfferta = (int) ($_POST['id'] ?? 0);
+        if ($idOfferta <= 0) {
+            $errors[] = 'Offerta non valida per upload file.';
+        } elseif (!isset($_FILES['allegato']) || !is_array($_FILES['allegato'])) {
+            $errors[] = 'Nessun file ricevuto.';
+        } else {
+            $file = $_FILES['allegato'];
+            if ((int) ($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
+                $errors[] = 'Errore durante il caricamento del file.';
+            } else {
+                $uploadBase = __DIR__ . '/uploads/offerte/' . $idOfferta;
+                if (!is_dir($uploadBase) && !mkdir($uploadBase, 0775, true) && !is_dir($uploadBase)) {
+                    $errors[] = 'Impossibile creare la cartella di upload.';
+                } else {
+                    $originalName = basename((string) $file['name']);
+                    $ext = pathinfo($originalName, PATHINFO_EXTENSION);
+                    $storedName = uniqid('file_', true) . ($ext ? '.' . $ext : '');
+                    $target = $uploadBase . '/' . $storedName;
+                    if (!move_uploaded_file((string) $file['tmp_name'], $target)) {
+                        $errors[] = 'Impossibile salvare il file sul server.';
+                    } else {
+                        $mime = function_exists('mime_content_type') ? mime_content_type($target) : null;
+                        $size = filesize($target);
+                        $pdo->prepare('INSERT INTO offerte_file (offerta_id, nome_originale, nome_salvato, mime_type, dimensione_bytes) VALUES (:offerta_id, :nome_originale, :nome_salvato, :mime_type, :dimensione_bytes)')
+                            ->execute([
+                                ':offerta_id' => $idOfferta,
+                                ':nome_originale' => $originalName,
+                                ':nome_salvato' => $storedName,
+                                ':mime_type' => $mime,
+                                ':dimensione_bytes' => (int) $size,
+                            ]);
+                        $success = 'File caricato correttamente.';
+                        $viewId = $idOfferta;
+                        $st = $pdo->prepare('SELECT o.*, c.protocollo AS commessa_protocollo, c.consulente_nome AS commessa_consulente FROM offerte o LEFT JOIN commesse c ON c.offerta_id=o.id WHERE o.id=:id');
+                        $st->execute([':id' => $viewId]);
+                        $offertaInVisualizzazione = $st->fetch();
+                        $stmtFiles = $pdo->prepare('SELECT * FROM offerte_file WHERE offerta_id = :offerta_id ORDER BY caricato_il DESC');
+                        $stmtFiles->execute([':offerta_id' => $viewId]);
+                        $filesOfferta = $stmtFiles->fetchAll();
+                    }
+                }
+            }
+        }
     }
     if($azione==='delete'){ $id=(int)($_POST['id']??0); if($id>0){$pdo->prepare('DELETE FROM offerte WHERE id=:id')->execute([':id'=>$id]);$success='Offerta eliminata correttamente.';}}
     if($azione==='save'){
@@ -405,6 +471,51 @@ renderHeader('Simplex - Offerte');
 <div class="d-flex justify-content-between align-items-center mb-4"><h2 class="mb-0">Gestione Offerte</h2><a class="btn btn-primary" href="offerte.php?action=new">Nuova Offerta</a></div>
 <?php if($success): ?><div class="alert alert-success"><?= htmlspecialchars($success) ?></div><?php endif; ?>
 <?php foreach($errors as $error): ?><div class="alert alert-danger"><?= htmlspecialchars($error) ?></div><?php endforeach; ?>
+
+<?php if($offertaInVisualizzazione): ?>
+<div class="card mb-4">
+    <div class="card-header">Dettaglio Offerta</div>
+    <div class="card-body">
+        <div class="row g-2">
+            <?php foreach($offertaInVisualizzazione as $campo => $valore): ?>
+                <div class="col-md-4"><strong><?= htmlspecialchars((string)$campo) ?>:</strong> <?= htmlspecialchars((string)($valore ?? '-')) ?></div>
+            <?php endforeach; ?>
+        </div>
+    </div>
+</div>
+
+<div class="card mb-4">
+    <div class="card-header">Documenti Offerta</div>
+    <div class="card-body">
+        <form method="post" enctype="multipart/form-data" class="row g-2 mb-3">
+            <input type="hidden" name="azione" value="upload_file">
+            <input type="hidden" name="id" value="<?= (int)$offertaInVisualizzazione['id'] ?>">
+            <div class="col-md-9"><input type="file" class="form-control" name="allegato" required></div>
+            <div class="col-md-3 d-grid"><button class="btn btn-outline-primary" type="submit">Carica file</button></div>
+        </form>
+        <div class="table-responsive">
+            <table class="table table-sm table-striped align-middle mb-0">
+                <thead><tr><th>Nome file</th><th>Tipo</th><th>Dimensione</th><th>Caricato il</th><th>Azioni</th></tr></thead>
+                <tbody>
+                <?php if(!$filesOfferta): ?><tr><td colspan="5" class="text-center text-muted py-3">Nessun file caricato.</td></tr><?php endif; ?>
+                <?php foreach($filesOfferta as $file): ?>
+                    <tr>
+                        <td><?= htmlspecialchars($file['nome_originale']) ?></td>
+                        <td><?= htmlspecialchars($file['mime_type'] ?? '-') ?></td>
+                        <td><?= htmlspecialchars((string)$file['dimensione_bytes']) ?> bytes</td>
+                        <td><?= htmlspecialchars($file['caricato_il']) ?></td>
+                        <td>
+                            <a class="btn btn-sm btn-outline-secondary" href="download_offerta_file.php?id=<?= (int)$file['id'] ?>&mode=view" target="_blank">Visualizza</a>
+                            <a class="btn btn-sm btn-outline-primary" href="download_offerta_file.php?id=<?= (int)$file['id'] ?>&mode=download">Scarica</a>
+                        </td>
+                    </tr>
+                <?php endforeach; ?>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+<?php endif; ?>
 
 <?php if($action==='new'||$editId>0): ?>
 <div class="card mb-4"><div class="card-header"><?= $editId>0?'Modifica Offerta':'Nuova Offerta' ?></div><div class="card-body"><form method="post" class="row g-3" id="form-offerta"><input type="hidden" name="azione" value="save"><input type="hidden" name="id" value="<?= (int)($formData['id']??0) ?>">
