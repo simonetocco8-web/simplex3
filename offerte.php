@@ -17,7 +17,7 @@ $DETTAGLI_SERVIZIO = [
     'ALTRE CONSULENZE' => ['MARKETING', 'PIANI STRATEGICI', 'CONTROLLO DI GESTIONE', 'ALTRO'],
 ];
 $MODALITA_PAGAMENTO = ['30-60 FMDF','Bonifico Bancario f.m.v.f','da definire','RI.BA.','RID','rid 06 mensilità','rimessa diretta','Rimessa Diretta'];
-$TIPOLOGIE_AZIENDA = ['Promotore', 'Fornitore', 'Partner'];
+$TIPOLOGIE_AZIENDA = ['Promotore', 'Fornitore', 'Partner', 'Cliente'];
 $REGIONI_ITALIA = ['Abruzzo', 'Basilicata', 'Calabria', 'Campania', 'Emilia-Romagna', 'Friuli Venezia Giulia', 'Lazio', 'Liguria', 'Lombardia', 'Marche', 'Molise', 'Piemonte', 'Puglia', 'Sardegna', 'Sicilia', 'Toscana', 'Trentino-Alto Adige/Südtirol', 'Umbria', "Valle d'Aosta/Vallée d'Aoste", 'Veneto'];
 
 function ensureAziendeGeoColumns(PDO $pdo): void
@@ -40,7 +40,7 @@ function creaAziendaRapida(PDO $pdo, array $input): array
     if (!is_array($tipologie)) {
         $tipologie = [];
     }
-    $tipologieValide = array_values(array_intersect($tipologie, ['Promotore', 'Fornitore', 'Partner']));
+    $tipologieValide = array_values(array_intersect($tipologie, ['Promotore', 'Fornitore', 'Partner', 'Cliente']));
     $organicoMedio = trim((string) ($input['organico_medio'] ?? ''));
     $fatturatoRaw = str_replace(',', '.', trim((string) ($input['fatturato'] ?? '')));
 

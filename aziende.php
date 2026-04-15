@@ -3,7 +3,7 @@ require_once __DIR__ . '/config/database.php';
 require_once __DIR__ . '/includes/layout.php';
 require_once __DIR__ . '/includes/auth.php';
 
-$TIPOLOGIE_AZIENDA = ['Promotore', 'Fornitore', 'Partner'];
+$TIPOLOGIE_AZIENDA = ['Promotore', 'Fornitore', 'Partner', 'Cliente'];
 $REGIONI_ITALIA = ['Abruzzo', 'Basilicata', 'Calabria', 'Campania', 'Emilia-Romagna', 'Friuli Venezia Giulia', 'Lazio', 'Liguria', 'Lombardia', 'Marche', 'Molise', 'Piemonte', 'Puglia', 'Sardegna', 'Sicilia', 'Toscana', 'Trentino-Alto Adige/Südtirol', 'Umbria', "Valle d'Aosta/Vallée d'Aoste", 'Veneto'];
 $CATEGORIE_MERCEOLOGICHE = [
     'Agroalimentare', 'Commerciale', 'Commercio', 'Edile', 'Ente', 'Formazione', 'Fornitore', 'Impiantistica',
