@@ -731,23 +731,38 @@ if(formNuovaAzienda&&aziendaSel){
     formNuovaAzienda.addEventListener('submit',async (e)=>{
         e.preventDefault();
         nuovaAziendaError.classList.add('d-none');
-        const fd=new FormData(formNuovaAzienda);
-        const resp=await fetch('offerte.php',{method:'POST',body:fd});
-        const data=await resp.json();
-        if(!data.ok){
-            nuovaAziendaError.textContent=(data.errors||['Errore nel salvataggio azienda.']).join(' ');
+        try{
+            const fd=new FormData(formNuovaAzienda);
+            const resp=await fetch('offerte.php',{
+                method:'POST',
+                body:fd,
+                credentials:'same-origin',
+                headers:{'Accept':'application/json','X-Requested-With':'XMLHttpRequest'}
+            });
+            const raw=await resp.text();
+            let data=null;
+            try{
+                data=JSON.parse(raw);
+            }catch(parseError){
+                throw new Error('Risposta non JSON dal server: ' + raw.slice(0, 200));
+            }
+            if(!resp.ok || !data || !data.ok){
+                const errori=(data&&Array.isArray(data.errors)&&data.errors.length>0)?data.errors:['Errore nel salvataggio azienda.'];
+                throw new Error(errori.join(' '));
+            }
+            const opt=document.createElement('option');
+            opt.value=String(data.id);
+            opt.textContent=data.ragione_sociale;
+            opt.selected=true;
+            aziendaSel.appendChild(opt);
+            formNuovaAzienda.reset();
+            const modalEl=document.getElementById('modalNuovaAzienda');
+            const modal=bootstrap.Modal.getInstance(modalEl);
+            if(modal){ modal.hide(); }
+        }catch(error){
+            nuovaAziendaError.textContent=error instanceof Error ? error.message : 'Errore inatteso durante il salvataggio azienda.';
             nuovaAziendaError.classList.remove('d-none');
-            return;
         }
-        const opt=document.createElement('option');
-        opt.value=String(data.id);
-        opt.textContent=data.ragione_sociale;
-        opt.selected=true;
-        aziendaSel.appendChild(opt);
-        formNuovaAzienda.reset();
-        const modalEl=document.getElementById('modalNuovaAzienda');
-        const modal=bootstrap.Modal.getInstance(modalEl);
-        if(modal){ modal.hide(); }
     });
 }
 const tabellaMomentiOfferta=document.querySelector('#tabella-momenti-offerta tbody');
