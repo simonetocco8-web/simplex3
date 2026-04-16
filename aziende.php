@@ -4,6 +4,8 @@ require_once __DIR__ . '/includes/layout.php';
 require_once __DIR__ . '/includes/auth.php';
 
 $TIPOLOGIE_AZIENDA = ['Promotore', 'Fornitore', 'Partner', 'Cliente'];
+$ORGANICO_OPTIONS = ['0-10', '10-50', '50-250', '250+'];
+$FATTURATO_OPTIONS = ['< 2 Mln', '< 10 Mln', '< 50 Mln', '> 50 Mln'];
 $REGIONI_ITALIA = ['Abruzzo', 'Basilicata', 'Calabria', 'Campania', 'Emilia-Romagna', 'Friuli Venezia Giulia', 'Lazio', 'Liguria', 'Lombardia', 'Marche', 'Molise', 'Piemonte', 'Puglia', 'Sardegna', 'Sicilia', 'Toscana', 'Trentino-Alto Adige/Südtirol', 'Umbria', "Valle d'Aosta/Vallée d'Aoste", 'Veneto'];
 $CATEGORIE_MERCEOLOGICHE = [
     'Agroalimentare', 'Commerciale', 'Commercio', 'Edile', 'Ente', 'Formazione', 'Fornitore', 'Impiantistica',
@@ -70,7 +72,7 @@ $pdo->exec(
         categoria VARCHAR(50) NULL,
         ea VARCHAR(255) NULL,
         organico_medio VARCHAR(30) NOT NULL,
-        fatturato DECIMAL(15,2) NOT NULL,
+        fatturato VARCHAR(20) NOT NULL,
         conosciuto_come VARCHAR(50) NULL,
         principali_prodotti TEXT NULL,
         note TEXT NULL,
@@ -90,6 +92,7 @@ if (!in_array('regione', $columnsAziende, true)) {
 if (!in_array('comune', $columnsAziende, true)) {
     $pdo->exec("ALTER TABLE aziende ADD COLUMN comune VARCHAR(120) NULL AFTER provincia");
 }
+$pdo->exec("ALTER TABLE aziende MODIFY COLUMN fatturato VARCHAR(20) NOT NULL");
 
 $pdo->exec(
     "CREATE TABLE IF NOT EXISTS aziende_file (
@@ -219,7 +222,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $categoria = trim($_POST['categoria'] ?? '');
         $ea = trim($_POST['ea'] ?? '');
         $organicoMedio = trim($_POST['organico_medio'] ?? '');
-        $fatturato = str_replace(',', '.', trim($_POST['fatturato'] ?? ''));
+        $fatturato = trim($_POST['fatturato'] ?? '');
         $conosciutoCome = trim($_POST['conosciuto_come'] ?? '');
         $principaliProdotti = trim($_POST['principali_prodotti'] ?? '');
         $note = trim($_POST['note'] ?? '');
@@ -245,12 +248,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $errors[] = 'Seleziona almeno una Tipologia di Azienda.';
         }
 
-        if (!preg_match('/^\d+\s*-\s*\d+$/', $organicoMedio)) {
-            $errors[] = 'Organico Medio obbligatorio: usa formato range (es. 10-50).';
+        if (!in_array($organicoMedio, $ORGANICO_OPTIONS, true)) {
+            $errors[] = 'Organico Medio non valido.';
         }
 
-        if (!is_numeric($fatturato) || (float) $fatturato < 0) {
-            $errors[] = 'Fatturato obbligatorio: inserisci un importo valido in euro.';
+        if (!in_array($fatturato, $FATTURATO_OPTIONS, true)) {
+            $errors[] = 'Fatturato non valido.';
         }
 
         if ($email !== '' && !filter_var($email, FILTER_VALIDATE_EMAIL)) {
@@ -294,7 +297,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 ':categoria' => $categoria !== '' ? $categoria : null,
                 ':ea' => $ea !== '' ? $ea : null,
                 ':organico_medio' => $organicoMedio,
-                ':fatturato' => number_format((float) $fatturato, 2, '.', ''),
+                ':fatturato' => $fatturato,
                 ':conosciuto_come' => $conosciutoCome !== '' ? $conosciutoCome : null,
                 ':principali_prodotti' => $principaliProdotti !== '' ? $principaliProdotti : null,
                 ':note' => $note !== '' ? $note : null,
@@ -387,9 +390,6 @@ foreach ($filters as $field) {
     } elseif (in_array($field, ['rco_utente_id', 'segnalata_da_utente_id', 'promotore_azienda_id'], true)) {
         $where[] = "a.$field = :$key";
         $params[":$key"] = (int) $value;
-    } elseif ($field === 'fatturato') {
-        $where[] = "a.$field = :$key";
-        $params[":$key"] = str_replace(',', '.', $value);
     } else {
         $where[] = "a.$field LIKE :$key";
         $params[":$key"] = '%' . $value . '%';
@@ -585,8 +585,24 @@ $formTipologie = isset($formData['tipologia_azienda']) ? explode(',', (string) $
                                     <?php endforeach; ?>
                                 </select>
                             </div>
-                            <div class="col-md-3"><label class="form-label">Organico Medio *</label><input class="form-control" name="organico_medio" placeholder="es. 10-50" required value="<?= htmlspecialchars($formData['organico_medio'] ?? '') ?>"></div>
-                            <div class="col-md-3"><label class="form-label">Fatturato (€) *</label><input class="form-control" name="fatturato" required value="<?= htmlspecialchars($formData['fatturato'] ?? '') ?>"></div>
+                            <div class="col-md-3">
+                                <label class="form-label">Organico Medio *</label>
+                                <select class="form-select" name="organico_medio" required>
+                                    <option value="">-- Seleziona --</option>
+                                    <?php foreach ($ORGANICO_OPTIONS as $option): ?>
+                                        <option value="<?= htmlspecialchars($option) ?>" <?= (($formData['organico_medio'] ?? '') === $option) ? 'selected' : '' ?>><?= htmlspecialchars($option) ?></option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </div>
+                            <div class="col-md-3">
+                                <label class="form-label">Fatturato *</label>
+                                <select class="form-select" name="fatturato" required>
+                                    <option value="">-- Seleziona --</option>
+                                    <?php foreach ($FATTURATO_OPTIONS as $option): ?>
+                                        <option value="<?= htmlspecialchars($option) ?>" <?= (($formData['fatturato'] ?? '') === $option) ? 'selected' : '' ?>><?= htmlspecialchars($option) ?></option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </div>
 
                             <div class="col-md-4">
                                 <label class="form-label">Conosciuto Come</label>

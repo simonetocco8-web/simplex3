@@ -18,6 +18,8 @@ $DETTAGLI_SERVIZIO = [
 ];
 $MODALITA_PAGAMENTO = ['30-60 FMDF','Bonifico Bancario f.m.v.f','da definire','RI.BA.','RID','rid 06 mensilità','rimessa diretta','Rimessa Diretta'];
 $TIPOLOGIE_AZIENDA = ['Promotore', 'Fornitore', 'Partner', 'Cliente'];
+$ORGANICO_OPTIONS = ['0-10', '10-50', '50-250', '250+'];
+$FATTURATO_OPTIONS = ['< 2 Mln', '< 10 Mln', '< 50 Mln', '> 50 Mln'];
 $REGIONI_ITALIA = ['Abruzzo', 'Basilicata', 'Calabria', 'Campania', 'Emilia-Romagna', 'Friuli Venezia Giulia', 'Lazio', 'Liguria', 'Lombardia', 'Marche', 'Molise', 'Piemonte', 'Puglia', 'Sardegna', 'Sicilia', 'Toscana', 'Trentino-Alto Adige/Südtirol', 'Umbria', "Valle d'Aosta/Vallée d'Aoste", 'Veneto'];
 
 function ensureAziendeGeoColumns(PDO $pdo): void
@@ -29,10 +31,12 @@ function ensureAziendeGeoColumns(PDO $pdo): void
     if (!in_array('comune', $columns, true)) {
         $pdo->exec("ALTER TABLE aziende ADD COLUMN comune VARCHAR(120) NULL AFTER provincia");
     }
+    $pdo->exec("ALTER TABLE aziende MODIFY COLUMN fatturato VARCHAR(20) NOT NULL");
 }
 
 function creaAziendaRapida(PDO $pdo, array $input): array
 {
+    global $ORGANICO_OPTIONS, $FATTURATO_OPTIONS;
     ensureAziendeGeoColumns($pdo);
     $partitaIva = preg_replace('/\D/', '', trim((string) ($input['partita_iva'] ?? '')));
     $ragioneSociale = trim((string) ($input['ragione_sociale'] ?? ''));
@@ -42,14 +46,14 @@ function creaAziendaRapida(PDO $pdo, array $input): array
     }
     $tipologieValide = array_values(array_intersect($tipologie, ['Promotore', 'Fornitore', 'Partner', 'Cliente']));
     $organicoMedio = trim((string) ($input['organico_medio'] ?? ''));
-    $fatturatoRaw = str_replace(',', '.', trim((string) ($input['fatturato'] ?? '')));
+    $fatturatoRaw = trim((string) ($input['fatturato'] ?? ''));
 
     $errors = [];
     if (!preg_match('/^\d{11}$/', $partitaIva)) $errors[] = 'Partita IVA non valida (11 cifre).';
     if ($ragioneSociale === '') $errors[] = 'Ragione sociale obbligatoria.';
     if (!$tipologieValide) $errors[] = 'Seleziona almeno una tipologia azienda.';
-    if ($organicoMedio === '') $errors[] = 'Organico medio obbligatorio.';
-    if ($fatturatoRaw === '' || !is_numeric($fatturatoRaw) || (float)$fatturatoRaw < 0) $errors[] = 'Fatturato non valido.';
+    if (!in_array($organicoMedio, $ORGANICO_OPTIONS, true)) $errors[] = 'Organico medio non valido.';
+    if (!in_array($fatturatoRaw, $FATTURATO_OPTIONS, true)) $errors[] = 'Fatturato non valido.';
     if ($errors) return ['ok' => false, 'errors' => $errors];
 
     $stmtExists = $pdo->prepare('SELECT id FROM aziende WHERE partita_iva = :partita_iva LIMIT 1');
@@ -67,7 +71,7 @@ function creaAziendaRapida(PDO $pdo, array $input): array
         ':ragione_sociale' => mb_substr($ragioneSociale, 0, 30),
         ':tipologia_azienda' => implode(',', $tipologieValide),
         ':organico_medio' => mb_substr($organicoMedio, 0, 30),
-        ':fatturato' => number_format((float)$fatturatoRaw, 2, '.', ''),
+        ':fatturato' => $fatturatoRaw,
         ':codice_fiscale' => trim((string) ($input['codice_fiscale'] ?? '')) ?: null,
         ':iban' => trim((string) ($input['iban'] ?? '')) ?: null,
         ':codice_fatturazione' => trim((string) ($input['codice_fatturazione'] ?? '')) ?: null,
@@ -623,8 +627,24 @@ renderHeader('Simplex - Offerte');
             <div class="col-md-4"><label class="form-label">Codice Fiscale</label><input class="form-control" name="codice_fiscale" maxlength="16"></div>
             <div class="col-md-4"><label class="form-label">Ragione Sociale *</label><input class="form-control" name="ragione_sociale" maxlength="30" required></div>
             <div class="col-md-6"><label class="form-label">Tipologia Azienda *</label><select class="form-select" name="tipologia_azienda[]" multiple required><?php foreach($TIPOLOGIE_AZIENDA as $tip): ?><option value="<?= htmlspecialchars($tip) ?>"><?= htmlspecialchars($tip) ?></option><?php endforeach; ?></select></div>
-            <div class="col-md-3"><label class="form-label">Organico Medio *</label><input class="form-control" name="organico_medio" maxlength="30" required></div>
-            <div class="col-md-3"><label class="form-label">Fatturato *</label><input type="number" step="0.01" min="0" class="form-control" name="fatturato" required></div>
+            <div class="col-md-3">
+              <label class="form-label">Organico Medio *</label>
+              <select class="form-select" name="organico_medio" required>
+                <option value="">-- Seleziona --</option>
+                <?php foreach($ORGANICO_OPTIONS as $option): ?>
+                  <option value="<?= htmlspecialchars($option) ?>"><?= htmlspecialchars($option) ?></option>
+                <?php endforeach; ?>
+              </select>
+            </div>
+            <div class="col-md-3">
+              <label class="form-label">Fatturato *</label>
+              <select class="form-select" name="fatturato" required>
+                <option value="">-- Seleziona --</option>
+                <?php foreach($FATTURATO_OPTIONS as $option): ?>
+                  <option value="<?= htmlspecialchars($option) ?>"><?= htmlspecialchars($option) ?></option>
+                <?php endforeach; ?>
+              </select>
+            </div>
             <div class="col-md-4"><label class="form-label">Telefono</label><input class="form-control" name="telefono"></div>
             <div class="col-md-4"><label class="form-label">Email</label><input type="email" class="form-control" name="email"></div>
             <div class="col-md-4"><label class="form-label">PEC</label><input class="form-control" name="pec"></div>
