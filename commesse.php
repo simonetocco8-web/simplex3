@@ -43,6 +43,7 @@ $pdo->exec("CREATE TABLE IF NOT EXISTS commessa_momenti_lavorazione (
     data_momento DATE NOT NULL,
     tipologia ENUM('Apertura', 'Consegna Doc di Sistema', 'Chiusura') NOT NULL,
     valore_giornaliero_uomo DECIMAL(12,2) NOT NULL,
+    costo_totale DECIMAL(12,2) NOT NULL DEFAULT 0,
     ore DECIMAL(8,2) NOT NULL DEFAULT 0,
     giorni DECIMAL(8,2) NOT NULL DEFAULT 0,
     numero_incontri INT UNSIGNED NOT NULL DEFAULT 0,
@@ -60,6 +61,7 @@ $pdo->exec("CREATE TABLE IF NOT EXISTS offerta_momenti_lavorazione (
     data_momento DATE NOT NULL,
     tipologia ENUM('Apertura', 'Consegna Doc di Sistema', 'Chiusura') NOT NULL,
     valore_giornaliero_uomo DECIMAL(12,2) NOT NULL,
+    costo_totale DECIMAL(12,2) NOT NULL DEFAULT 0,
     ore DECIMAL(8,2) NOT NULL DEFAULT 0,
     giorni DECIMAL(8,2) NOT NULL DEFAULT 0,
     numero_incontri INT UNSIGNED NOT NULL DEFAULT 0,
@@ -106,6 +108,12 @@ foreach ($migrations as $column => $sqlAlter) {
     if (!$exists) {
         $pdo->exec($sqlAlter);
     }
+}
+if (!(bool)$pdo->query("SHOW COLUMNS FROM commessa_momenti_lavorazione LIKE 'costo_totale'")->fetch()) {
+    $pdo->exec("ALTER TABLE commessa_momenti_lavorazione ADD COLUMN costo_totale DECIMAL(12,2) NOT NULL DEFAULT 0 AFTER valore_giornaliero_uomo");
+}
+if (!(bool)$pdo->query("SHOW COLUMNS FROM offerta_momenti_lavorazione LIKE 'costo_totale'")->fetch()) {
+    $pdo->exec("ALTER TABLE offerta_momenti_lavorazione ADD COLUMN costo_totale DECIMAL(12,2) NOT NULL DEFAULT 0 AFTER valore_giornaliero_uomo");
 }
 
 $utenti = $pdo->query('SELECT id, nome, cognome FROM utenti ORDER BY nome, cognome')->fetchAll();
@@ -270,10 +278,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $stmtExists->execute([':momento_id' => $momentoId]);
                 if (!$stmtExists->fetchColumn()) {
                     $valoreG = (float) $momento['valore_giornaliero_uomo'];
+                    $costoTotale = (float) ($momento['costo_totale'] ?? 0);
                     $oreM = (float) $momento['ore'];
                     $giorniM = (float) $momento['giorni'];
                     $giornateCalcolate = $giorniM > 0 ? $giorniM : ($oreM / 8);
-                    $importoFattura = max(0, $valoreG * $giornateCalcolate);
+                    $importoFattura = $costoTotale > 0 ? $costoTotale : max(0, $valoreG * $giornateCalcolate);
                     $numeroFattura = $momentoId . '/' . date('Y');
                     $pdo->prepare('INSERT INTO fatture (commessa_id, momento_id, numero, anno_riferimento, importo) VALUES (:commessa_id, :momento_id, :numero, :anno, :importo)')
                         ->execute([
@@ -303,8 +312,8 @@ if ($editId > 0) {
 
     if ($commessaInModifica) {
         $pdo->prepare(
-            'INSERT INTO commessa_momenti_lavorazione (commessa_id, data_momento, tipologia, valore_giornaliero_uomo, ore, giorni, numero_incontri, ore_studio, data_prevista)
-             SELECT ?, om.data_momento, om.tipologia, om.valore_giornaliero_uomo, om.ore, om.giorni, om.numero_incontri, om.ore_studio, om.data_prevista
+            'INSERT INTO commessa_momenti_lavorazione (commessa_id, data_momento, tipologia, valore_giornaliero_uomo, costo_totale, ore, giorni, numero_incontri, ore_studio, data_prevista)
+             SELECT ?, om.data_momento, om.tipologia, om.valore_giornaliero_uomo, om.costo_totale, om.ore, om.giorni, om.numero_incontri, om.ore_studio, om.data_prevista
              FROM offerta_momenti_lavorazione om
              WHERE om.offerta_id = ?
                AND NOT EXISTS (
@@ -313,6 +322,7 @@ if ($editId > 0) {
                      AND cm.data_momento = om.data_momento
                      AND cm.tipologia = om.tipologia
                      AND cm.valore_giornaliero_uomo = om.valore_giornaliero_uomo
+                     AND cm.costo_totale = om.costo_totale
                      AND cm.ore = om.ore
                      AND cm.giorni = om.giorni
                )'
@@ -332,10 +342,11 @@ if ($editId > 0) {
 
         foreach ($momentiCommessa as $momento) {
             $valoreG = (float) $momento['valore_giornaliero_uomo'];
+            $costoTotale = (float) ($momento['costo_totale'] ?? 0);
             $oreM = (float) $momento['ore'];
             $giorniM = (float) $momento['giorni'];
             $giornateCalcolate = $giorniM > 0 ? $giorniM : ($oreM / 8);
-            $totaleMomentiEuro += $valoreG * $giornateCalcolate;
+            $totaleMomentiEuro += $costoTotale > 0 ? $costoTotale : ($valoreG * $giornateCalcolate);
         }
 
         $stmtFatture = $pdo->prepare('SELECT id, momento_id, numero FROM fatture WHERE commessa_id = :commessa_id');
@@ -474,18 +485,19 @@ renderHeader('Simplex - Commesse');
                         <table class="table table-sm table-striped mb-0 align-middle">
                             <thead>
                                 <tr>
-                                    <th>Data</th><th>Tipologia</th><th>Valore Giornaliero Uomo (€)</th><th>Ore</th><th>Giorni</th><th># Incontri</th><th># ore di studio</th><th>Data Prevista</th><th>Completato</th><th>Fattura</th>
+                                    <th>Data</th><th>Tipologia</th><th>Valore Giornaliero Uomo (€)</th><th>Costo Totale (€)</th><th>Ore</th><th>Giorni</th><th># Incontri</th><th># ore di studio</th><th>Data Prevista</th><th>Completato</th><th>Fattura</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 <?php if (!$momentiCommessa): ?>
-                                    <tr><td colspan="10" class="text-center text-muted py-3">Nessun momento inserito.</td></tr>
+                                    <tr><td colspan="11" class="text-center text-muted py-3">Nessun momento inserito.</td></tr>
                                 <?php endif; ?>
                                 <?php foreach ($momentiCommessa as $momento): ?>
                                     <tr>
                                         <td><?= htmlspecialchars($momento['data_momento']) ?></td>
                                         <td><?= htmlspecialchars($momento['tipologia']) ?></td>
                                         <td><?= htmlspecialchars((string)$momento['valore_giornaliero_uomo']) ?></td>
+                                        <td><?= htmlspecialchars((string)($momento['costo_totale'] ?? '0.00')) ?></td>
                                         <td><?= htmlspecialchars((string)$momento['ore']) ?></td>
                                         <td><?= htmlspecialchars((string)$momento['giorni']) ?></td>
                                         <td><?= htmlspecialchars((string)$momento['numero_incontri']) ?></td>

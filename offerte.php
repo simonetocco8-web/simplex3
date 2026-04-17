@@ -130,8 +130,8 @@ function ensureCommessa(PDO $pdo, int $offertaId, string $consulente): ?string
 
     $commessaId = (int) $pdo->lastInsertId();
     $pdo->prepare(
-        'INSERT INTO commessa_momenti_lavorazione (commessa_id, data_momento, tipologia, valore_giornaliero_uomo, ore, giorni, numero_incontri, ore_studio, data_prevista)
-         SELECT :commessa_id, om.data_momento, om.tipologia, om.valore_giornaliero_uomo, om.ore, om.giorni, om.numero_incontri, om.ore_studio, om.data_prevista
+        'INSERT INTO commessa_momenti_lavorazione (commessa_id, data_momento, tipologia, valore_giornaliero_uomo, costo_totale, ore, giorni, numero_incontri, ore_studio, data_prevista)
+         SELECT :commessa_id, om.data_momento, om.tipologia, om.valore_giornaliero_uomo, om.costo_totale, om.ore, om.giorni, om.numero_incontri, om.ore_studio, om.data_prevista
          FROM offerta_momenti_lavorazione om
          WHERE om.offerta_id = :offerta_id'
     )->execute([
@@ -194,6 +194,7 @@ $pdo->exec("CREATE TABLE IF NOT EXISTS commessa_momenti_lavorazione (
     data_momento DATE NOT NULL,
     tipologia ENUM('Apertura', 'Consegna Doc di Sistema', 'Chiusura') NOT NULL,
     valore_giornaliero_uomo DECIMAL(12,2) NOT NULL,
+    costo_totale DECIMAL(12,2) NOT NULL DEFAULT 0,
     ore DECIMAL(8,2) NOT NULL DEFAULT 0,
     giorni DECIMAL(8,2) NOT NULL DEFAULT 0,
     numero_incontri INT UNSIGNED NOT NULL DEFAULT 0,
@@ -210,6 +211,7 @@ $pdo->exec("CREATE TABLE IF NOT EXISTS offerta_momenti_lavorazione (
     data_momento DATE NOT NULL,
     tipologia ENUM('Apertura', 'Consegna Doc di Sistema', 'Chiusura') NOT NULL,
     valore_giornaliero_uomo DECIMAL(12,2) NOT NULL,
+    costo_totale DECIMAL(12,2) NOT NULL DEFAULT 0,
     ore DECIMAL(8,2) NOT NULL DEFAULT 0,
     giorni DECIMAL(8,2) NOT NULL DEFAULT 0,
     numero_incontri INT UNSIGNED NOT NULL DEFAULT 0,
@@ -238,6 +240,12 @@ $migrations=[
 foreach($migrations as $col=>$sql){ if(!(bool)$pdo->query("SHOW COLUMNS FROM offerte LIKE '{$col}'")->fetch()){ $pdo->exec($sql);} }
 $pdo->exec("ALTER TABLE offerte MODIFY COLUMN stato VARCHAR(20) NOT NULL DEFAULT 'In Lavorazione'");
 $pdo->exec("UPDATE offerte SET stato = 'In Lavorazione' WHERE stato = 'Generata'");
+if (!(bool)$pdo->query("SHOW COLUMNS FROM offerta_momenti_lavorazione LIKE 'costo_totale'")->fetch()) {
+    $pdo->exec("ALTER TABLE offerta_momenti_lavorazione ADD COLUMN costo_totale DECIMAL(12,2) NOT NULL DEFAULT 0 AFTER valore_giornaliero_uomo");
+}
+if (!(bool)$pdo->query("SHOW COLUMNS FROM commessa_momenti_lavorazione LIKE 'costo_totale'")->fetch()) {
+    $pdo->exec("ALTER TABLE commessa_momenti_lavorazione ADD COLUMN costo_totale DECIMAL(12,2) NOT NULL DEFAULT 0 AFTER valore_giornaliero_uomo");
+}
 
 $utenti = $pdo->query('SELECT id, nome, cognome FROM utenti ORDER BY nome, cognome')->fetchAll();
 $CONSULENTI = [];
@@ -415,31 +423,31 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
             $momData = $_POST['momento_data_momento'] ?? [];
             $momTip = $_POST['momento_tipologia'] ?? [];
             $momVal = $_POST['momento_valore_giornaliero_uomo'] ?? [];
-            $momOre = $_POST['momento_ore'] ?? [];
-            $momGio = $_POST['momento_giorni'] ?? [];
+            $momCostoTot = $_POST['momento_costo_totale'] ?? [];
             if (is_array($momData) && is_array($momTip) && is_array($momVal)) {
                 $pdo->prepare('DELETE FROM offerta_momenti_lavorazione WHERE offerta_id = :offerta_id')->execute([':offerta_id' => $offertaIdForCommessa]);
                 $rows = max(count($momData), count($momTip), count($momVal));
-                $insMomOff = $pdo->prepare('INSERT INTO offerta_momenti_lavorazione (offerta_id, data_momento, tipologia, valore_giornaliero_uomo, ore, giorni) VALUES (:offerta_id, :data_momento, :tipologia, :valore, :ore, :giorni)');
+                $insMomOff = $pdo->prepare('INSERT INTO offerta_momenti_lavorazione (offerta_id, data_momento, tipologia, valore_giornaliero_uomo, costo_totale, ore, giorni) VALUES (:offerta_id, :data_momento, :tipologia, :valore, :costo_totale, :ore, :giorni)');
                 for ($i = 0; $i < $rows; $i++) {
                     $d = trim((string)($momData[$i] ?? ''));
                     $t = trim((string)($momTip[$i] ?? ''));
                     $v = str_replace(',', '.', trim((string)($momVal[$i] ?? '')));
-                    $o = str_replace(',', '.', trim((string)($momOre[$i] ?? '0')));
-                    $g = str_replace(',', '.', trim((string)($momGio[$i] ?? '0')));
-                    if ($d === '' && $t === '' && $v === '') continue;
+                    $ct = str_replace(',', '.', trim((string)($momCostoTot[$i] ?? '0')));
+                    if ($d === '' && $t === '' && $v === '' && $ct === '') continue;
                     if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $d)) continue;
                     if (!in_array($t, ['Apertura', 'Consegna Doc di Sistema', 'Chiusura'], true)) continue;
                     if (!is_numeric($v) || (float)$v < 0) continue;
-                    if (!is_numeric($o) || (float)$o < 0) $o = '0';
-                    if (!is_numeric($g) || (float)$g < 0) $g = '0';
+                    if (!is_numeric($ct) || (float)$ct < 0) $ct = '0';
+                    $giorniCalc = ((float)$v > 0) ? ((float)$ct / (float)$v) : 0.0;
+                    $oreCalc = $giorniCalc * 8;
                     $insMomOff->execute([
                         ':offerta_id' => $offertaIdForCommessa,
                         ':data_momento' => $d,
                         ':tipologia' => $t,
                         ':valore' => number_format((float)$v, 2, '.', ''),
-                        ':ore' => number_format((float)$o, 2, '.', ''),
-                        ':giorni' => number_format((float)$g, 2, '.', ''),
+                        ':costo_totale' => number_format((float)$ct, 2, '.', ''),
+                        ':ore' => number_format($oreCalc, 2, '.', ''),
+                        ':giorni' => number_format($giorniCalc, 2, '.', ''),
                     ]);
                 }
             }
@@ -573,16 +581,17 @@ renderHeader('Simplex - Offerte');
     <label class="form-label">Momenti di Lavorazione (da riportare in Commessa)</label>
     <div class="table-responsive">
         <table class="table table-sm table-bordered" id="tabella-momenti-offerta">
-            <thead><tr><th>Data</th><th>Tipologia</th><th>Valore €/giorno</th><th>Ore</th><th>Giorni</th><th></th></tr></thead>
+            <thead><tr><th>Data</th><th>Tipologia</th><th>Valore €/giorno</th><th>Costo Totale (€)</th><th>Ore</th><th>Giorni</th><th></th></tr></thead>
             <tbody>
-            <?php $momRows = $momentiOfferta ?: [['data_momento'=>'','tipologia'=>'Apertura','valore_giornaliero_uomo'=>'','ore'=>'0','giorni'=>'0']]; ?>
+            <?php $momRows = $momentiOfferta ?: [['data_momento'=>'','tipologia'=>'Apertura','valore_giornaliero_uomo'=>'','costo_totale'=>'','ore'=>'0','giorni'=>'0']]; ?>
             <?php foreach($momRows as $m): ?>
                 <tr>
                     <td><input type="date" class="form-control" name="momento_data_momento[]" value="<?= htmlspecialchars($m['data_momento'] ?? '') ?>"></td>
                     <td><select class="form-select" name="momento_tipologia[]"><option value="Apertura" <?= (($m['tipologia'] ?? '')==='Apertura')?'selected':'' ?>>Apertura</option><option value="Consegna Doc di Sistema" <?= (($m['tipologia'] ?? '')==='Consegna Doc di Sistema')?'selected':'' ?>>Consegna Doc di Sistema</option><option value="Chiusura" <?= (($m['tipologia'] ?? '')==='Chiusura')?'selected':'' ?>>Chiusura</option></select></td>
-                    <td><input type="number" min="0" step="0.01" class="form-control" name="momento_valore_giornaliero_uomo[]" value="<?= htmlspecialchars((string)($m['valore_giornaliero_uomo'] ?? '')) ?>"></td>
-                    <td><input type="number" min="0" step="0.01" class="form-control" name="momento_ore[]" value="<?= htmlspecialchars((string)($m['ore'] ?? '0')) ?>"></td>
-                    <td><input type="number" min="0" step="0.01" class="form-control" name="momento_giorni[]" value="<?= htmlspecialchars((string)($m['giorni'] ?? '0')) ?>"></td>
+                    <td><input type="number" min="0" step="0.01" class="form-control momento-valore" name="momento_valore_giornaliero_uomo[]" value="<?= htmlspecialchars((string)($m['valore_giornaliero_uomo'] ?? '')) ?>"></td>
+                    <td><input type="number" min="0" step="0.01" class="form-control momento-costo" name="momento_costo_totale[]" value="<?= htmlspecialchars((string)($m['costo_totale'] ?? ((float)($m['valore_giornaliero_uomo'] ?? 0) * (float)($m['giorni'] ?? 0))) ) ?>"></td>
+                    <td><input type="number" min="0" step="0.01" class="form-control momento-ore" name="momento_ore[]" value="<?= htmlspecialchars((string)($m['ore'] ?? '0')) ?>" readonly></td>
+                    <td><input type="number" min="0" step="0.01" class="form-control momento-giorni" name="momento_giorni[]" value="<?= htmlspecialchars((string)($m['giorni'] ?? '0')) ?>" readonly></td>
                     <td><button type="button" class="btn btn-sm btn-outline-danger btn-rimuovi-momento">✕</button></td>
                 </tr>
             <?php endforeach; ?>
@@ -787,11 +796,34 @@ if(formNuovaAzienda&&aziendaSel){
 }
 const tabellaMomentiOfferta=document.querySelector('#tabella-momenti-offerta tbody');
 const btnAggiungiMomentoOfferta=document.getElementById('btn-aggiungi-momento-offerta');
+function aggiornaCalcoloMomento(tr){
+    if(!tr) return;
+    const valoreInput=tr.querySelector('.momento-valore');
+    const costoInput=tr.querySelector('.momento-costo');
+    const oreInput=tr.querySelector('.momento-ore');
+    const giorniInput=tr.querySelector('.momento-giorni');
+    if(!valoreInput||!costoInput||!oreInput||!giorniInput) return;
+    const valore=parseFloat((valoreInput.value||'0').replace(',','.'));
+    const costo=parseFloat((costoInput.value||'0').replace(',','.'));
+    const giorni=(Number.isFinite(valore)&&valore>0&&Number.isFinite(costo)&&costo>=0)?(costo/valore):0;
+    const ore=giorni*8;
+    giorniInput.value=giorni.toFixed(2);
+    oreInput.value=ore.toFixed(2);
+}
 if(tabellaMomentiOfferta&&btnAggiungiMomentoOfferta){
+    tabellaMomentiOfferta.querySelectorAll('tr').forEach((tr)=>aggiornaCalcoloMomento(tr));
+    tabellaMomentiOfferta.addEventListener('input',(e)=>{
+        const row=e.target.closest('tr');
+        if(!row) return;
+        if(e.target.classList.contains('momento-valore')||e.target.classList.contains('momento-costo')){
+            aggiornaCalcoloMomento(row);
+        }
+    });
     btnAggiungiMomentoOfferta.addEventListener('click',()=>{
         const tr=document.createElement('tr');
-        tr.innerHTML='<td><input type=\"date\" class=\"form-control\" name=\"momento_data_momento[]\"></td><td><select class=\"form-select\" name=\"momento_tipologia[]\"><option value=\"Apertura\">Apertura</option><option value=\"Consegna Doc di Sistema\">Consegna Doc di Sistema</option><option value=\"Chiusura\">Chiusura</option></select></td><td><input type=\"number\" min=\"0\" step=\"0.01\" class=\"form-control\" name=\"momento_valore_giornaliero_uomo[]\"></td><td><input type=\"number\" min=\"0\" step=\"0.01\" class=\"form-control\" name=\"momento_ore[]\" value=\"0\"></td><td><input type=\"number\" min=\"0\" step=\"0.01\" class=\"form-control\" name=\"momento_giorni[]\" value=\"0\"></td><td><button type=\"button\" class=\"btn btn-sm btn-outline-danger btn-rimuovi-momento\">✕</button></td>';
+        tr.innerHTML='<td><input type=\"date\" class=\"form-control\" name=\"momento_data_momento[]\"></td><td><select class=\"form-select\" name=\"momento_tipologia[]\"><option value=\"Apertura\">Apertura</option><option value=\"Consegna Doc di Sistema\">Consegna Doc di Sistema</option><option value=\"Chiusura\">Chiusura</option></select></td><td><input type=\"number\" min=\"0\" step=\"0.01\" class=\"form-control momento-valore\" name=\"momento_valore_giornaliero_uomo[]\"></td><td><input type=\"number\" min=\"0\" step=\"0.01\" class=\"form-control momento-costo\" name=\"momento_costo_totale[]\"></td><td><input type=\"number\" min=\"0\" step=\"0.01\" class=\"form-control momento-ore\" name=\"momento_ore[]\" value=\"0\" readonly></td><td><input type=\"number\" min=\"0\" step=\"0.01\" class=\"form-control momento-giorni\" name=\"momento_giorni[]\" value=\"0\" readonly></td><td><button type=\"button\" class=\"btn btn-sm btn-outline-danger btn-rimuovi-momento\">✕</button></td>';
         tabellaMomentiOfferta.appendChild(tr);
+        aggiornaCalcoloMomento(tr);
     });
     tabellaMomentiOfferta.addEventListener('click',(e)=>{
         const btn=e.target.closest('.btn-rimuovi-momento');
