@@ -438,16 +438,27 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
                     if (!in_array($t, ['Apertura', 'Consegna Doc di Sistema', 'Chiusura'], true)) continue;
                     if (!is_numeric($v) || (float)$v < 0) continue;
                     if (!is_numeric($ct) || (float)$ct < 0) $ct = '0';
-                    $giorniCalc = ((float)$v > 0) ? ((float)$ct / (float)$v) : 0.0;
-                    $oreCalc = $giorniCalc * 8;
+                    $giorniCalc = 0;
+                    $oreCalc = 0;
+                    if ((float)$v > 0 && (float)$ct > 0) {
+                        $giorniInteri = (int) floor((float)$ct / (float)$v);
+                        $costoResiduo = (float)$ct - ($giorniInteri * (float)$v);
+                        $oreResidue = (int) ceil(($costoResiduo / (float)$v) * 8);
+                        if ($oreResidue >= 8) {
+                            $giorniInteri += (int) floor($oreResidue / 8);
+                            $oreResidue = $oreResidue % 8;
+                        }
+                        $giorniCalc = $giorniInteri;
+                        $oreCalc = $oreResidue;
+                    }
                     $insMomOff->execute([
                         ':offerta_id' => $offertaIdForCommessa,
                         ':data_momento' => $d,
                         ':tipologia' => $t,
                         ':valore' => number_format((float)$v, 2, '.', ''),
                         ':costo_totale' => number_format((float)$ct, 2, '.', ''),
-                        ':ore' => number_format($oreCalc, 2, '.', ''),
-                        ':giorni' => number_format($giorniCalc, 2, '.', ''),
+                        ':ore' => number_format((float)$oreCalc, 2, '.', ''),
+                        ':giorni' => number_format((float)$giorniCalc, 2, '.', ''),
                     ]);
                 }
             }
@@ -590,8 +601,8 @@ renderHeader('Simplex - Offerte');
                     <td><select class="form-select" name="momento_tipologia[]"><option value="Apertura" <?= (($m['tipologia'] ?? '')==='Apertura')?'selected':'' ?>>Apertura</option><option value="Consegna Doc di Sistema" <?= (($m['tipologia'] ?? '')==='Consegna Doc di Sistema')?'selected':'' ?>>Consegna Doc di Sistema</option><option value="Chiusura" <?= (($m['tipologia'] ?? '')==='Chiusura')?'selected':'' ?>>Chiusura</option></select></td>
                     <td><input type="number" min="0" step="0.01" class="form-control momento-valore" name="momento_valore_giornaliero_uomo[]" value="<?= htmlspecialchars((string)($m['valore_giornaliero_uomo'] ?? '')) ?>"></td>
                     <td><input type="number" min="0" step="0.01" class="form-control momento-costo" name="momento_costo_totale[]" value="<?= htmlspecialchars((string)($m['costo_totale'] ?? ((float)($m['valore_giornaliero_uomo'] ?? 0) * (float)($m['giorni'] ?? 0))) ) ?>"></td>
-                    <td><input type="number" min="0" step="0.01" class="form-control momento-ore" name="momento_ore[]" value="<?= htmlspecialchars((string)($m['ore'] ?? '0')) ?>" readonly></td>
-                    <td><input type="number" min="0" step="0.01" class="form-control momento-giorni" name="momento_giorni[]" value="<?= htmlspecialchars((string)($m['giorni'] ?? '0')) ?>" readonly></td>
+                    <td><input type="number" min="0" step="1" class="form-control momento-ore" name="momento_ore[]" value="<?= htmlspecialchars((string)($m['ore'] ?? '0')) ?>" readonly></td>
+                    <td><input type="number" min="0" step="1" class="form-control momento-giorni" name="momento_giorni[]" value="<?= htmlspecialchars((string)($m['giorni'] ?? '0')) ?>" readonly></td>
                     <td><button type="button" class="btn btn-sm btn-outline-danger btn-rimuovi-momento">✕</button></td>
                 </tr>
             <?php endforeach; ?>
@@ -805,10 +816,19 @@ function aggiornaCalcoloMomento(tr){
     if(!valoreInput||!costoInput||!oreInput||!giorniInput) return;
     const valore=parseFloat((valoreInput.value||'0').replace(',','.'));
     const costo=parseFloat((costoInput.value||'0').replace(',','.'));
-    const giorni=(Number.isFinite(valore)&&valore>0&&Number.isFinite(costo)&&costo>=0)?(costo/valore):0;
-    const ore=giorni*8;
-    giorniInput.value=giorni.toFixed(2);
-    oreInput.value=ore.toFixed(2);
+    let giorni=0;
+    let ore=0;
+    if(Number.isFinite(valore)&&valore>0&&Number.isFinite(costo)&&costo>0){
+        giorni=Math.floor(costo/valore);
+        const costoResiduo=costo-(giorni*valore);
+        ore=Math.ceil((costoResiduo/valore)*8);
+        if(ore>=8){
+            giorni+=Math.floor(ore/8);
+            ore=ore%8;
+        }
+    }
+    giorniInput.value=giorni.toString();
+    oreInput.value=ore.toString();
 }
 if(tabellaMomentiOfferta&&btnAggiungiMomentoOfferta){
     tabellaMomentiOfferta.querySelectorAll('tr').forEach((tr)=>aggiornaCalcoloMomento(tr));
@@ -821,7 +841,7 @@ if(tabellaMomentiOfferta&&btnAggiungiMomentoOfferta){
     });
     btnAggiungiMomentoOfferta.addEventListener('click',()=>{
         const tr=document.createElement('tr');
-        tr.innerHTML='<td><input type=\"date\" class=\"form-control\" name=\"momento_data_momento[]\"></td><td><select class=\"form-select\" name=\"momento_tipologia[]\"><option value=\"Apertura\">Apertura</option><option value=\"Consegna Doc di Sistema\">Consegna Doc di Sistema</option><option value=\"Chiusura\">Chiusura</option></select></td><td><input type=\"number\" min=\"0\" step=\"0.01\" class=\"form-control momento-valore\" name=\"momento_valore_giornaliero_uomo[]\"></td><td><input type=\"number\" min=\"0\" step=\"0.01\" class=\"form-control momento-costo\" name=\"momento_costo_totale[]\"></td><td><input type=\"number\" min=\"0\" step=\"0.01\" class=\"form-control momento-ore\" name=\"momento_ore[]\" value=\"0\" readonly></td><td><input type=\"number\" min=\"0\" step=\"0.01\" class=\"form-control momento-giorni\" name=\"momento_giorni[]\" value=\"0\" readonly></td><td><button type=\"button\" class=\"btn btn-sm btn-outline-danger btn-rimuovi-momento\">✕</button></td>';
+        tr.innerHTML='<td><input type=\"date\" class=\"form-control\" name=\"momento_data_momento[]\"></td><td><select class=\"form-select\" name=\"momento_tipologia[]\"><option value=\"Apertura\">Apertura</option><option value=\"Consegna Doc di Sistema\">Consegna Doc di Sistema</option><option value=\"Chiusura\">Chiusura</option></select></td><td><input type=\"number\" min=\"0\" step=\"0.01\" class=\"form-control momento-valore\" name=\"momento_valore_giornaliero_uomo[]\"></td><td><input type=\"number\" min=\"0\" step=\"0.01\" class=\"form-control momento-costo\" name=\"momento_costo_totale[]\"></td><td><input type=\"number\" min=\"0\" step=\"1\" class=\"form-control momento-ore\" name=\"momento_ore[]\" value=\"0\" readonly></td><td><input type=\"number\" min=\"0\" step=\"1\" class=\"form-control momento-giorni\" name=\"momento_giorni[]\" value=\"0\" readonly></td><td><button type=\"button\" class=\"btn btn-sm btn-outline-danger btn-rimuovi-momento\">✕</button></td>';
         tabellaMomentiOfferta.appendChild(tr);
         aggiornaCalcoloMomento(tr);
     });
