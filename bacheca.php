@@ -119,7 +119,7 @@ renderHeader('Simplex - Bacheca');
                                     <td><a href="offerte.php?view=<?= (int)$commessa['offerta_id'] ?>"><?= htmlspecialchars($commessa['offerta_protocollo'] ?? '-') ?></a></td>
                                     <td><?= htmlspecialchars($commessa['servizio'] ?? '-') ?></td>
                                     <td><?= htmlspecialchars($commessa['stato'] ?? '-') ?></td>
-                                    <td><?= htmlspecialchars($commessa['creata_il'] ?? '-') ?></td>
+                                    <td><?= htmlspecialchars(formatDateIt($commessa['creata_il'] ?? null)) ?></td>
                                 </tr>
                             <?php endforeach; ?>
                             </tbody>
@@ -154,8 +154,8 @@ renderHeader('Simplex - Bacheca');
                                     <td><?= htmlspecialchars($offerta['azienda_nome'] ?? '-') ?></td>
                                     <td><?= htmlspecialchars($offerta['servizio']) ?></td>
                                     <td><?= htmlspecialchars($offerta['stato']) ?></td>
-                                    <td><?= htmlspecialchars($offerta['data_offerta'] ?? '-') ?></td>
-                                    <td><?= htmlspecialchars($offerta['data_scadenza'] ?? '-') ?></td>
+                                    <td><?= htmlspecialchars(formatDateIt($offerta['data_offerta'] ?? null)) ?></td>
+                                    <td><?= htmlspecialchars(formatDateIt($offerta['data_scadenza'] ?? null)) ?></td>
                                     <td><?= htmlspecialchars((string)($offerta['validita_giorni'] ?? '-')) ?></td>
                                 </tr>
                             <?php endforeach; ?>

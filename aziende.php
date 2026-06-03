@@ -797,7 +797,7 @@ $sediFormJson = json_encode($sediForm, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_A
                     <div class="card-body">
                         <div class="row g-3">
                             <?php foreach ($aziendaInVisualizzazione as $campo => $valore): ?>
-                                <div class="col-md-4"><strong><?= htmlspecialchars((string)$campo) ?>:</strong> <?= htmlspecialchars((string)($valore ?? '-')) ?></div>
+                                <div class="col-md-4"><strong><?= htmlspecialchars((string)$campo) ?>:</strong> <?= htmlspecialchars(preg_match('/(^data_|_il$|created_at$|aggiornato_il$)/', (string)$campo) ? formatDateIt($valore) : (string)($valore ?? '-')) ?></div>
                             <?php endforeach; ?>
                         </div>
                     </div>
@@ -845,7 +845,7 @@ $sediFormJson = json_encode($sediForm, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_A
                                         <td><?= htmlspecialchars($file['nome_originale']) ?></td>
                                         <td><?= htmlspecialchars($file['mime_type'] ?? '-') ?></td>
                                         <td><?= htmlspecialchars((string)$file['dimensione_bytes']) ?> bytes</td>
-                                        <td><?= htmlspecialchars($file['caricato_il']) ?></td>
+                                        <td><?= htmlspecialchars(formatDateIt($file['caricato_il'] ?? null)) ?></td>
                                         <td>
                                             <a class="btn btn-sm btn-outline-secondary" href="download_azienda_file.php?id=<?= (int)$file['id'] ?>&mode=view" target="_blank">Visualizza</a>
                                             <a class="btn btn-sm btn-outline-primary" href="download_azienda_file.php?id=<?= (int)$file['id'] ?>&mode=download">Scarica</a>
