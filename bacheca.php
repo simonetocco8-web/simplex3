@@ -41,9 +41,11 @@ if ($isConsulente && $nomeCompleto !== '' && (bool) $pdo->query("SHOW TABLES LIK
 $offerteScadenza = [];
 if ($isAdminOrArea && (bool) $pdo->query("SHOW TABLES LIKE 'offerte'")->fetchColumn()) {
     $offerteScadenza = $pdo->query(
-        "SELECT id, protocollo, servizio, stato, data_offerta, data_scadenza, validita_giorni
-         FROM offerte
-         ORDER BY (data_scadenza IS NULL), data_scadenza ASC, id DESC"
+        "SELECT o.id, o.protocollo, o.servizio, o.stato, o.data_offerta, o.data_scadenza, o.validita_giorni,
+                a.ragione_sociale AS azienda_nome
+         FROM offerte o
+         LEFT JOIN aziende a ON a.id = o.azienda_id
+         ORDER BY (o.data_scadenza IS NULL), o.data_scadenza ASC, o.id DESC"
     )->fetchAll();
 }
 
@@ -134,6 +136,7 @@ renderHeader('Simplex - Bacheca');
                             <thead class="table-light">
                             <tr>
                                 <th>Protocollo</th>
+                                <th>Azienda</th>
                                 <th>Servizio</th>
                                 <th>Stato</th>
                                 <th>Data Offerta</th>
@@ -143,11 +146,12 @@ renderHeader('Simplex - Bacheca');
                             </thead>
                             <tbody>
                             <?php if (!$offerteScadenza): ?>
-                                <tr><td colspan="6" class="text-center text-muted py-4">Nessuna offerta presente.</td></tr>
+                                <tr><td colspan="7" class="text-center text-muted py-4">Nessuna offerta presente.</td></tr>
                             <?php endif; ?>
                             <?php foreach ($offerteScadenza as $offerta): ?>
                                 <tr>
                                     <td><a href="offerte.php?view=<?= (int)$offerta['id'] ?>"><?= htmlspecialchars($offerta['protocollo']) ?></a></td>
+                                    <td><?= htmlspecialchars($offerta['azienda_nome'] ?? '-') ?></td>
                                     <td><?= htmlspecialchars($offerta['servizio']) ?></td>
                                     <td><?= htmlspecialchars($offerta['stato']) ?></td>
                                     <td><?= htmlspecialchars($offerta['data_offerta'] ?? '-') ?></td>
