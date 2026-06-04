@@ -667,30 +667,34 @@ renderHeader('Simplex - Offerte');
 <div class="col-md-4"><label class="form-label">Promotore</label><select class="form-select" name="promotore_azienda_id"><option value="">-- Seleziona --</option><?php foreach($aziendePromotori as $az): ?><option value="<?= (int)$az['id'] ?>" <?= ((int)($formData['promotore_azienda_id']??0)===(int)$az['id'])?'selected':'' ?>><?= htmlspecialchars($az['ragione_sociale']) ?></option><?php endforeach; ?></select></div>
 <div class="col-md-2"><label class="form-label">Commissione</label><select class="form-select" name="commissione_tipo"><option value="">--</option><option value="percentuale" <?= (($formData['commissione_tipo']??'')==='percentuale')?'selected':'' ?>>%</option><option value="euro" <?= (($formData['commissione_tipo']??'')==='euro')?'selected':'' ?>>€</option></select></div>
 <div class="col-md-2"><label class="form-label">Valore</label><input class="form-control" name="commissione_valore" value="<?= htmlspecialchars($formData['commissione_valore']??'') ?>"></div>
-<div class="col-md-4"><label class="form-label">% Sconto</label><input type="number" min="0" max="100" step="0.01" class="form-control" required name="sconto_percentuale" value="<?= htmlspecialchars($formData['sconto_percentuale']??'') ?>"></div>
 <div class="col-12"><label class="form-label">Note</label><textarea class="form-control" name="note" rows="2"><?= htmlspecialchars($formData['note']??'') ?></textarea></div>
 <div class="col-12">
     <label class="form-label">Momenti di Lavorazione (da riportare in Commessa)</label>
     <div class="table-responsive">
         <table class="table table-sm table-bordered" id="tabella-momenti-offerta">
-            <thead><tr><th>Data</th><th>Tipologia</th><th>Valore €/giorno</th><th>Costo Totale (€)</th><th>Ore</th><th>Giorni</th><th></th></tr></thead>
+            <thead><tr><th>Data</th><th>Tipologia</th><th>Costo Totale (€)</th><th>Valore €/giorno</th><th>Giorni</th><th>Ore</th><th></th></tr></thead>
             <tbody>
             <?php $momRows = $momentiOfferta ?: [['data_momento'=>'','tipologia'=>'Apertura','valore_giornaliero_uomo'=>'','costo_totale'=>'','ore'=>'0','giorni'=>'0']]; ?>
             <?php foreach($momRows as $m): ?>
                 <tr>
                     <td><input class="form-control" name="momento_data_momento[]" placeholder="gg/mm/aaaa" value="<?= htmlspecialchars(formatDateInputIt($m['data_momento'] ?? '')) ?>"></td>
                     <td><select class="form-select" name="momento_tipologia[]"><option value="Apertura" <?= (($m['tipologia'] ?? '')==='Apertura')?'selected':'' ?>>Apertura</option><option value="Consegna Doc di Sistema" <?= (($m['tipologia'] ?? '')==='Consegna Doc di Sistema')?'selected':'' ?>>Consegna Doc di Sistema</option><option value="Chiusura" <?= (($m['tipologia'] ?? '')==='Chiusura')?'selected':'' ?>>Chiusura</option></select></td>
-                    <td><input type="number" min="0" step="0.01" class="form-control momento-valore" name="momento_valore_giornaliero_uomo[]" value="<?= htmlspecialchars((string)($m['valore_giornaliero_uomo'] ?? '')) ?>"></td>
                     <td><input type="number" min="0" step="0.01" class="form-control momento-costo" name="momento_costo_totale[]" value="<?= htmlspecialchars((string)($m['costo_totale'] ?? ((float)($m['valore_giornaliero_uomo'] ?? 0) * (float)($m['giorni'] ?? 0))) ) ?>"></td>
-                    <td><input type="number" min="0" step="1" class="form-control momento-ore" name="momento_ore[]" value="<?= htmlspecialchars((string)($m['ore'] ?? '0')) ?>" readonly></td>
+                    <td><input type="number" min="0" step="0.01" class="form-control momento-valore" name="momento_valore_giornaliero_uomo[]" value="<?= htmlspecialchars((string)($m['valore_giornaliero_uomo'] ?? '')) ?>"></td>
                     <td><input type="number" min="0" step="1" class="form-control momento-giorni" name="momento_giorni[]" value="<?= htmlspecialchars((string)($m['giorni'] ?? '0')) ?>" readonly></td>
+                    <td><input type="number" min="0" step="1" class="form-control momento-ore" name="momento_ore[]" value="<?= htmlspecialchars((string)($m['ore'] ?? '0')) ?>" readonly></td>
                     <td><button type="button" class="btn btn-sm btn-outline-danger btn-rimuovi-momento">✕</button></td>
                 </tr>
             <?php endforeach; ?>
             </tbody>
         </table>
     </div>
-    <button type="button" class="btn btn-sm btn-outline-primary" id="btn-aggiungi-momento-offerta">+ Aggiungi momento</button>
+    <div class="row g-3 align-items-end mt-2">
+        <div class="col-md-4"><label class="form-label">SubTotale</label><input type="text" class="form-control" id="momenti_subtotale" readonly value="€ 0,00"></div>
+        <div class="col-md-4"><label class="form-label">Sconto %</label><input type="number" min="0" max="100" step="0.01" class="form-control" id="sconto_percentuale" name="sconto_percentuale" required value="<?= htmlspecialchars($formData['sconto_percentuale']??'') ?>"></div>
+        <div class="col-md-4"><label class="form-label">Totale</label><input type="text" class="form-control" id="momenti_totale" readonly value="€ 0,00"></div>
+    </div>
+    <button type="button" class="btn btn-sm btn-outline-primary mt-3" id="btn-aggiungi-momento-offerta">+ Aggiungi momento</button>
 </div>
 <div class="col-12 d-flex gap-2"><button class="btn btn-primary" type="submit">Salva Offerta</button><a class="btn btn-outline-secondary" href="offerte.php">Annulla</a></div>
 </form></div></div>
@@ -946,25 +950,47 @@ function aggiornaCalcoloMomento(tr){
     giorniInput.value=giorni.toString();
     oreInput.value=ore.toString();
 }
+const momentiSubtotale=document.getElementById('momenti_subtotale');
+const momentiTotale=document.getElementById('momenti_totale');
+const scontoPercentuale=document.getElementById('sconto_percentuale');
+function formatEuro(value){return new Intl.NumberFormat('it-IT',{style:'currency',currency:'EUR'}).format(value||0);}
+function aggiornaTotaliMomenti(){
+    if(!tabellaMomentiOfferta) return;
+    let subtotale=0;
+    tabellaMomentiOfferta.querySelectorAll('.momento-costo').forEach((input)=>{
+        const costo=parseFloat((input.value||'0').replace(',','.'));
+        if(Number.isFinite(costo)&&costo>0) subtotale+=costo;
+    });
+    const sconto=parseFloat((scontoPercentuale?.value||'0').replace(',','.'));
+    const scontoValido=Number.isFinite(sconto)?Math.min(Math.max(sconto,0),100):0;
+    const totale=subtotale-(subtotale*scontoValido/100);
+    if(momentiSubtotale) momentiSubtotale.value=formatEuro(subtotale);
+    if(momentiTotale) momentiTotale.value=formatEuro(totale);
+}
 if(tabellaMomentiOfferta&&btnAggiungiMomentoOfferta){
     tabellaMomentiOfferta.querySelectorAll('tr').forEach((tr)=>aggiornaCalcoloMomento(tr));
+    aggiornaTotaliMomenti();
     tabellaMomentiOfferta.addEventListener('input',(e)=>{
         const row=e.target.closest('tr');
         if(!row) return;
         if(e.target.classList.contains('momento-valore')||e.target.classList.contains('momento-costo')){
             aggiornaCalcoloMomento(row);
         }
+        aggiornaTotaliMomenti();
     });
     btnAggiungiMomentoOfferta.addEventListener('click',()=>{
         const tr=document.createElement('tr');
-        tr.innerHTML='<td><input class=\"form-control\" name=\"momento_data_momento[]\" placeholder=\"gg/mm/aaaa\"></td><td><select class=\"form-select\" name=\"momento_tipologia[]\"><option value=\"Apertura\">Apertura</option><option value=\"Consegna Doc di Sistema\">Consegna Doc di Sistema</option><option value=\"Chiusura\">Chiusura</option></select></td><td><input type=\"number\" min=\"0\" step=\"0.01\" class=\"form-control momento-valore\" name=\"momento_valore_giornaliero_uomo[]\"></td><td><input type=\"number\" min=\"0\" step=\"0.01\" class=\"form-control momento-costo\" name=\"momento_costo_totale[]\"></td><td><input type=\"number\" min=\"0\" step=\"1\" class=\"form-control momento-ore\" name=\"momento_ore[]\" value=\"0\" readonly></td><td><input type=\"number\" min=\"0\" step=\"1\" class=\"form-control momento-giorni\" name=\"momento_giorni[]\" value=\"0\" readonly></td><td><button type=\"button\" class=\"btn btn-sm btn-outline-danger btn-rimuovi-momento\">✕</button></td>';
+        tr.innerHTML='<td><input class=\"form-control\" name=\"momento_data_momento[]\" placeholder=\"gg/mm/aaaa\"></td><td><select class=\"form-select\" name=\"momento_tipologia[]\"><option value=\"Apertura\">Apertura</option><option value=\"Consegna Doc di Sistema\">Consegna Doc di Sistema</option><option value=\"Chiusura\">Chiusura</option></select></td><td><input type=\"number\" min=\"0\" step=\"0.01\" class=\"form-control momento-costo\" name=\"momento_costo_totale[]\"></td><td><input type=\"number\" min=\"0\" step=\"0.01\" class=\"form-control momento-valore\" name=\"momento_valore_giornaliero_uomo[]\"></td><td><input type=\"number\" min=\"0\" step=\"1\" class=\"form-control momento-giorni\" name=\"momento_giorni[]\" value=\"0\" readonly></td><td><input type=\"number\" min=\"0\" step=\"1\" class=\"form-control momento-ore\" name=\"momento_ore[]\" value=\"0\" readonly></td><td><button type=\"button\" class=\"btn btn-sm btn-outline-danger btn-rimuovi-momento\">✕</button></td>';
         tabellaMomentiOfferta.appendChild(tr);
         aggiornaCalcoloMomento(tr);
+        aggiornaTotaliMomenti();
     });
+    if(scontoPercentuale){scontoPercentuale.addEventListener('input',aggiornaTotaliMomenti);}
     tabellaMomentiOfferta.addEventListener('click',(e)=>{
         const btn=e.target.closest('.btn-rimuovi-momento');
         if(!btn) return;
         btn.closest('tr')?.remove();
+        aggiornaTotaliMomenti();
     });
 }
 </script>
