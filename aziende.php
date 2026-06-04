@@ -600,13 +600,13 @@ $sediFormJson = json_encode($sediForm, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_A
                                 <input class="form-control" name="iban" value="<?= htmlspecialchars($formData['iban'] ?? '') ?>">
                             </div>
                             <div class="col-md-8">
-                                <label class="form-label d-block">Tipologia Azienda *</label>
-                                <?php foreach ($TIPOLOGIE_AZIENDA as $tip): ?>
-                                    <div class="form-check form-check-inline">
-                                        <input class="form-check-input" type="checkbox" name="tipologia_azienda[]" id="tip_<?= md5($tip) ?>" value="<?= htmlspecialchars($tip) ?>" <?= in_array($tip, $formTipologie, true) ? 'checked' : '' ?>>
-                                        <label class="form-check-label" for="tip_<?= md5($tip) ?>"><?= htmlspecialchars($tip) ?></label>
-                                    </div>
-                                <?php endforeach; ?>
+                                <label class="form-label" for="tipologia_azienda">Tipologia *</label>
+                                <select class="form-select" name="tipologia_azienda[]" id="tipologia_azienda" multiple required size="4">
+                                    <?php foreach ($TIPOLOGIE_AZIENDA as $tip): ?>
+                                        <option value="<?= htmlspecialchars($tip) ?>" <?= in_array($tip, $formTipologie, true) ? 'selected' : '' ?>><?= htmlspecialchars($tip) ?></option>
+                                    <?php endforeach; ?>
+                                </select>
+                                <div class="form-text">Puoi selezionare una o più tipologie.</div>
                             </div>
 
                             <div class="col-md-4"><label class="form-label">Codice fatturazione</label><input class="form-control" name="codice_fatturazione" value="<?= htmlspecialchars($formData['codice_fatturazione'] ?? '') ?>"></div>
