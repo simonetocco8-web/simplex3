@@ -115,7 +115,7 @@ renderHeader('Simplex - Bacheca');
                             <?php endif; ?>
                             <?php foreach ($commesseAssegnate as $commessa): ?>
                                 <tr>
-                                    <td><?= htmlspecialchars($commessa['protocollo']) ?></td>
+                                    <td><a href="commesse.php?edit=<?= (int)$commessa['id'] ?>"><?= htmlspecialchars($commessa['protocollo']) ?></a></td>
                                     <td><a href="offerte.php?view=<?= (int)$commessa['offerta_id'] ?>"><?= htmlspecialchars($commessa['offerta_protocollo'] ?? '-') ?></a></td>
                                     <td><?= htmlspecialchars($commessa['servizio'] ?? '-') ?></td>
                                     <td><?= htmlspecialchars($commessa['stato'] ?? '-') ?></td>
