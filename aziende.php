@@ -113,6 +113,20 @@ $pdo->exec(
 );
 
 $pdo->exec(
+    "CREATE TABLE IF NOT EXISTS aziende_referenti (
+        id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+        azienda_id INT UNSIGNED NOT NULL,
+        nome_cognome VARCHAR(120) NOT NULL,
+        telefono VARCHAR(30) NULL,
+        email VARCHAR(100) NULL,
+        ruolo VARCHAR(80) NULL,
+        creato_il TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        aggiornato_il TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        CONSTRAINT fk_aziende_referenti_azienda FOREIGN KEY (azienda_id) REFERENCES aziende(id) ON DELETE CASCADE
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
+);
+
+$pdo->exec(
     "CREATE TABLE IF NOT EXISTS aziende_file (
         id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
         azienda_id INT UNSIGNED NOT NULL,
@@ -136,7 +150,9 @@ $aziendaInModifica = null;
 $aziendaInVisualizzazione = null;
 $filesAzienda = [];
 $sediAzienda = [];
+$referentiAzienda = [];
 $sediForm = [];
+$referentiForm = [];
 
 if ($viewId > 0) {
     $stmt = $pdo->prepare('SELECT * FROM aziende WHERE id = :id');
@@ -149,6 +165,9 @@ if ($viewId > 0) {
         $stmtSedi = $pdo->prepare('SELECT * FROM aziende_sedi WHERE azienda_id = :azienda_id ORDER BY FIELD(tipo_sede, "Legale", "Amministrativa", "Operativa"), id');
         $stmtSedi->execute([':azienda_id' => $viewId]);
         $sediAzienda = $stmtSedi->fetchAll();
+        $stmtReferenti = $pdo->prepare('SELECT * FROM aziende_referenti WHERE azienda_id = :azienda_id ORDER BY id');
+        $stmtReferenti->execute([':azienda_id' => $viewId]);
+        $referentiAzienda = $stmtReferenti->fetchAll();
     }
 }
 
@@ -162,6 +181,9 @@ if ($editId > 0) {
         $stmtSedi = $pdo->prepare('SELECT * FROM aziende_sedi WHERE azienda_id = :azienda_id ORDER BY FIELD(tipo_sede, "Legale", "Amministrativa", "Operativa"), id');
         $stmtSedi->execute([':azienda_id' => $editId]);
         $sediForm = $stmtSedi->fetchAll();
+        $stmtReferenti = $pdo->prepare('SELECT * FROM aziende_referenti WHERE azienda_id = :azienda_id ORDER BY id');
+        $stmtReferenti->execute([':azienda_id' => $editId]);
+        $referentiForm = $stmtReferenti->fetchAll();
     }
 }
 
@@ -223,6 +245,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $stmtSedi = $pdo->prepare('SELECT * FROM aziende_sedi WHERE azienda_id = :azienda_id ORDER BY FIELD(tipo_sede, "Legale", "Amministrativa", "Operativa"), id');
                         $stmtSedi->execute([':azienda_id' => $viewId]);
                         $sediAzienda = $stmtSedi->fetchAll();
+                        $stmtReferenti = $pdo->prepare('SELECT * FROM aziende_referenti WHERE azienda_id = :azienda_id ORDER BY id');
+                        $stmtReferenti->execute([':azienda_id' => $viewId]);
+                        $referentiAzienda = $stmtReferenti->fetchAll();
                     }
                 }
             }
@@ -274,6 +299,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $sediInput[] = $sede;
         }
         $sediForm = $sediInput;
+
+        $referentiInput = [];
+        $referenteNomi = $_POST['referente_nome_cognome'] ?? [];
+        $referenteTelefoni = $_POST['referente_telefono'] ?? [];
+        $referenteEmail = $_POST['referente_email'] ?? [];
+        $referenteRuoli = $_POST['referente_ruolo'] ?? [];
+        $maxReferenti = max(
+            is_array($referenteNomi) ? count($referenteNomi) : 0,
+            is_array($referenteTelefoni) ? count($referenteTelefoni) : 0,
+            is_array($referenteEmail) ? count($referenteEmail) : 0,
+            is_array($referenteRuoli) ? count($referenteRuoli) : 0
+        );
+        for ($i = 0; $i < $maxReferenti; $i++) {
+            $referente = [
+                'nome_cognome' => trim((string)($referenteNomi[$i] ?? '')),
+                'telefono' => trim((string)($referenteTelefoni[$i] ?? '')),
+                'email' => trim((string)($referenteEmail[$i] ?? '')),
+                'ruolo' => trim((string)($referenteRuoli[$i] ?? '')),
+            ];
+            if (implode('', $referente) === '') {
+                continue;
+            }
+            $referentiInput[] = $referente;
+        }
+        $referentiForm = $referentiInput;
+
         $rcoUtenteId = ($_POST['rco_utente_id'] ?? '') !== '' ? (int) $_POST['rco_utente_id'] : null;
         $segnalataDaUtenteId = ($_POST['segnalata_da_utente_id'] ?? '') !== '' ? (int) $_POST['segnalata_da_utente_id'] : null;
         $categoria = trim($_POST['categoria'] ?? '');
@@ -321,6 +372,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
             if ($sede['provincia'] !== '' && !preg_match('/^[A-Z]{2}$/', $sede['provincia'])) {
                 $errors[] = "Provincia non valida per la sede {$numeroSede}: inserire la sigla di 2 lettere.";
+            }
+        }
+
+        foreach ($referentiInput as $index => $referente) {
+            $numeroReferente = $index + 1;
+            if ($referente['nome_cognome'] === '') {
+                $errors[] = "Nome e cognome obbligatori per il referente {$numeroReferente}.";
+            }
+            if ($referente['email'] !== '' && !filter_var($referente['email'], FILTER_VALIDATE_EMAIL)) {
+                $errors[] = "Email non valida per il referente {$numeroReferente}.";
             }
         }
 
@@ -435,6 +496,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         ':comune' => $sede['comune'],
                     ]);
                 }
+
+                $stmtDeleteReferenti = $pdo->prepare('DELETE FROM aziende_referenti WHERE azienda_id = :azienda_id');
+                $stmtDeleteReferenti->execute([':azienda_id' => $aziendaId]);
+                $stmtInsertReferente = $pdo->prepare(
+                    'INSERT INTO aziende_referenti (azienda_id, nome_cognome, telefono, email, ruolo)
+                     VALUES (:azienda_id, :nome_cognome, :telefono, :email, :ruolo)'
+                );
+                foreach ($referentiInput as $referente) {
+                    $stmtInsertReferente->execute([
+                        ':azienda_id' => $aziendaId,
+                        ':nome_cognome' => $referente['nome_cognome'],
+                        ':telefono' => $referente['telefono'] !== '' ? $referente['telefono'] : null,
+                        ':email' => $referente['email'] !== '' ? $referente['email'] : null,
+                        ':ruolo' => $referente['ruolo'] !== '' ? $referente['ruolo'] : null,
+                    ]);
+                }
                 $pdo->commit();
 
                 $success = $id > 0 ? 'Azienda aggiornata correttamente.' : 'Azienda creata correttamente.';
@@ -442,6 +519,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $editId = 0;
                 $aziendaInModifica = null;
                 $sediForm = [];
+                $referentiForm = [];
                 $aziendePromotori = $pdo->query("SELECT id, ragione_sociale FROM aziende WHERE FIND_IN_SET('Promotore', tipologia_azienda) > 0 ORDER BY ragione_sociale")->fetchAll();
             } catch (PDOException $e) {
                 if ($pdo->inTransaction()) {
@@ -514,6 +592,7 @@ $formTipologie = isset($formData['tipologia_azienda'])
     ? (is_array($formData['tipologia_azienda']) ? $formData['tipologia_azienda'] : explode(',', (string) $formData['tipologia_azienda']))
     : [];
 $sediFormJson = json_encode($sediForm, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT);
+$referentiFormJson = json_encode($referentiForm, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT);
 ?>
 <div class="container-fluid">
     <div class="row">
@@ -558,6 +637,7 @@ $sediFormJson = json_encode($sediForm, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_A
                         <a class="btn btn-outline-light btn-sm" href="logout.php">Logout</a>
                     </div>
                 </div>
+
             <?php endif; ?>
         </nav>
 
@@ -641,6 +721,35 @@ $sediFormJson = json_encode($sediForm, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_A
                                                 </tbody>
                                             </table>
                                         </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="col-12">
+                                <div class="card border-secondary-subtle">
+                                    <div class="card-header d-flex justify-content-between align-items-center">
+                                        <span>Referenti aziendali</span>
+                                        <button class="btn btn-sm btn-outline-primary" type="button" data-bs-toggle="modal" data-bs-target="#modalReferente">Aggiungi Referente</button>
+                                    </div>
+                                    <div class="card-body">
+                                        <div id="referenti-hidden-fields"></div>
+                                        <div class="table-responsive">
+                                            <table class="table table-sm align-middle mb-0">
+                                                <thead>
+                                                    <tr>
+                                                        <th>Nome e Cognome</th>
+                                                        <th>Telefono</th>
+                                                        <th>Email</th>
+                                                        <th>Ruolo</th>
+                                                        <th>Azioni</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody id="referenti-table-body">
+                                                    <tr><td colspan="5" class="text-center text-muted py-3">Nessun referente inserito.</td></tr>
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                        <div class="form-text mt-2">Puoi attribuire uno o più referenti all'azienda. Il nome e cognome sono obbligatori per ogni referente inserito.</div>
                                     </div>
                                 </div>
                             </div>
@@ -789,6 +898,30 @@ $sediFormJson = json_encode($sediForm, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_A
                         </div>
                     </div>
                 </div>
+
+                <div class="modal fade" id="modalReferente" tabindex="-1" aria-labelledby="modalReferenteLabel" aria-hidden="true">
+                    <div class="modal-dialog">
+                        <div class="modal-content">
+                            <div class="modal-header">
+                                <h5 class="modal-title" id="modalReferenteLabel">Aggiungi Referente</h5>
+                                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Chiudi"></button>
+                            </div>
+                            <div class="modal-body">
+                                <div class="row g-3" id="referente-modal-form">
+                                    <div class="col-12"><label class="form-label">Nome e Cognome *</label><input class="form-control" id="referente_nome_cognome" maxlength="120"></div>
+                                    <div class="col-md-6"><label class="form-label">Telefono</label><input class="form-control" id="referente_telefono" maxlength="30"></div>
+                                    <div class="col-md-6"><label class="form-label">Email</label><input type="email" class="form-control" id="referente_email" maxlength="100"></div>
+                                    <div class="col-12"><label class="form-label">Ruolo</label><input class="form-control" id="referente_ruolo" maxlength="80"></div>
+                                    <div class="col-12"><div class="alert alert-danger d-none mb-0" id="referente-modal-error"></div></div>
+                                </div>
+                            </div>
+                            <div class="modal-footer">
+                                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Annulla</button>
+                                <button type="button" class="btn btn-primary" id="salva-referente">Salva Referente</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             <?php endif; ?>
 
             <?php if ($aziendaInVisualizzazione): ?>
@@ -819,6 +952,32 @@ $sediFormJson = json_encode($sediForm, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_A
                                     <td><?= htmlspecialchars($sede['regione']) ?></td>
                                     <td><?= htmlspecialchars($sede['provincia']) ?></td>
                                     <td><?= htmlspecialchars($sede['comune']) ?></td>
+                                </tr>
+                            <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div class="card mb-4">
+                    <div class="card-header">Referenti Azienda</div>
+                    <div class="table-responsive">
+                        <table class="table table-sm table-striped align-middle mb-0">
+                            <thead><tr><th>Nome e Cognome</th><th>Telefono</th><th>Email</th><th>Ruolo</th></tr></thead>
+                            <tbody>
+                            <?php if (!$referentiAzienda): ?><tr><td colspan="4" class="text-center text-muted py-3">Nessun referente inserito.</td></tr><?php endif; ?>
+                            <?php foreach ($referentiAzienda as $referente): ?>
+                                <tr>
+                                    <td><?= htmlspecialchars($referente['nome_cognome']) ?></td>
+                                    <td><?= htmlspecialchars($referente['telefono'] ?? '-') ?></td>
+                                    <td>
+                                        <?php if (!empty($referente['email'])): ?>
+                                            <a href="mailto:<?= htmlspecialchars($referente['email']) ?>"><?= htmlspecialchars($referente['email']) ?></a>
+                                        <?php else: ?>
+                                            -
+                                        <?php endif; ?>
+                                    </td>
+                                    <td><?= htmlspecialchars($referente['ruolo'] ?? '-') ?></td>
                                 </tr>
                             <?php endforeach; ?>
                             </tbody>
@@ -1084,11 +1243,17 @@ async function setupGeoSelectors(scope) {
 
 
 const sediAziendali = <?= $sediFormJson ?: '[]' ?>;
+const referentiAziendali = <?= $referentiFormJson ?: '[]' ?>;
 const sediHiddenFields = document.getElementById('sedi-hidden-fields');
 const sediTableBody = document.getElementById('sedi-table-body');
 const sedeModalForm = document.getElementById('sede-modal-form');
 const sedeModalElement = document.getElementById('modalSede');
 const sedeModalError = document.getElementById('sede-modal-error');
+const referentiHiddenFields = document.getElementById('referenti-hidden-fields');
+const referentiTableBody = document.getElementById('referenti-table-body');
+const referenteModalForm = document.getElementById('referente-modal-form');
+const referenteModalElement = document.getElementById('modalReferente');
+const referenteModalError = document.getElementById('referente-modal-error');
 
 function addHiddenInput(container, name, value) {
     const input = document.createElement('input');
@@ -1216,8 +1381,107 @@ if (salvaSedeButton) {
     });
 }
 
+function resetReferenteModal() {
+    if (!referenteModalForm) return;
+    ['referente_nome_cognome', 'referente_telefono', 'referente_email', 'referente_ruolo'].forEach((id) => {
+        const field = document.getElementById(id);
+        if (field) field.value = '';
+    });
+    if (referenteModalError) {
+        referenteModalError.classList.add('d-none');
+        referenteModalError.textContent = '';
+    }
+}
+
+function renderReferenti() {
+    if (!referentiHiddenFields || !referentiTableBody) return;
+    referentiHiddenFields.innerHTML = '';
+    referentiTableBody.innerHTML = '';
+
+    if (referentiAziendali.length === 0) {
+        const row = document.createElement('tr');
+        const cell = document.createElement('td');
+        cell.colSpan = 5;
+        cell.className = 'text-center text-muted py-3';
+        cell.textContent = 'Nessun referente inserito.';
+        row.appendChild(cell);
+        referentiTableBody.appendChild(row);
+        return;
+    }
+
+    referentiAziendali.forEach((referente, index) => {
+        addHiddenInput(referentiHiddenFields, 'referente_nome_cognome[]', referente.nome_cognome);
+        addHiddenInput(referentiHiddenFields, 'referente_telefono[]', referente.telefono);
+        addHiddenInput(referentiHiddenFields, 'referente_email[]', referente.email);
+        addHiddenInput(referentiHiddenFields, 'referente_ruolo[]', referente.ruolo);
+
+        const row = document.createElement('tr');
+        [referente.nome_cognome, referente.telefono, referente.email, referente.ruolo].forEach((value) => {
+            const cell = document.createElement('td');
+            cell.textContent = value || '-';
+            row.appendChild(cell);
+        });
+
+        const actionsCell = document.createElement('td');
+        const removeButton = document.createElement('button');
+        removeButton.type = 'button';
+        removeButton.className = 'btn btn-sm btn-outline-danger';
+        removeButton.textContent = 'Rimuovi';
+        removeButton.addEventListener('click', () => {
+            referentiAziendali.splice(index, 1);
+            renderReferenti();
+        });
+        actionsCell.appendChild(removeButton);
+        row.appendChild(actionsCell);
+        referentiTableBody.appendChild(row);
+    });
+}
+
+function readReferenteModal() {
+    return {
+        nome_cognome: document.getElementById('referente_nome_cognome')?.value.trim() || '',
+        telefono: document.getElementById('referente_telefono')?.value.trim() || '',
+        email: document.getElementById('referente_email')?.value.trim() || '',
+        ruolo: document.getElementById('referente_ruolo')?.value.trim() || '',
+    };
+}
+
+function validateReferente(referente) {
+    if (!referente.nome_cognome) {
+        return 'Inserisci nome e cognome del referente.';
+    }
+    if (referente.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(referente.email)) {
+        return 'Email referente non valida.';
+    }
+    return '';
+}
+
+if (referenteModalElement) {
+    referenteModalElement.addEventListener('hidden.bs.modal', resetReferenteModal);
+}
+
+const salvaReferenteButton = document.getElementById('salva-referente');
+if (salvaReferenteButton) {
+    salvaReferenteButton.addEventListener('click', () => {
+        const referente = readReferenteModal();
+        const error = validateReferente(referente);
+        if (error) {
+            if (referenteModalError) {
+                referenteModalError.textContent = error;
+                referenteModalError.classList.remove('d-none');
+            }
+            return;
+        }
+        referentiAziendali.push(referente);
+        renderReferenti();
+        const modal = bootstrap.Modal.getInstance(referenteModalElement) || new bootstrap.Modal(referenteModalElement);
+        modal.hide();
+    });
+}
+
 if (sedeModalForm) setupGeoSelectors(sedeModalForm);
 document.querySelectorAll('form').forEach((form) => { setupGeoSelectors(form); });
 renderSedi();
+renderReferenti();
 </script>
 <?php renderFooter(); ?>
