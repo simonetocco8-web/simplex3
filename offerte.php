@@ -547,7 +547,7 @@ $filters=['protocollo','servizio','stato','dettaglio_servizio','rco_utente_id','
 $where=[];$params=[];
 foreach($filters as $f){$k='f_'.$f;$v=trim((string)($_GET[$k]??''));if($v==='')continue; if(in_array($f,['rco_utente_id','segnalato_da_utente_id','validita_giorni','anno_riferimento'],true)){$where[]="o.$f=:$k";$params[":$k"]=(int)$v;}elseif(in_array($f,['data_offerta','data_scadenza'],true)){$where[]="o.$f=:$k";$params[":$k"]=normalizeDateForDb($v);}else{$where[]="o.$f LIKE :$k";$params[":$k"]='%'.$v.'%';}}
 
-$sqlList='SELECT o.*, CONCAT(r.nome, " ", r.cognome) AS rco_nome, c.protocollo AS commessa_protocollo, c.consulente_nome AS commessa_consulente,
+$sqlList='SELECT o.*, CONCAT(r.nome, " ", r.cognome) AS rco_nome, c.id AS commessa_id, c.protocollo AS commessa_protocollo, c.consulente_nome AS commessa_consulente,
                  a.ragione_sociale AS azienda_nome,
                  COALESCE(importi.importo_totale, 0) AS importo_totale
           FROM offerte o
@@ -712,7 +712,29 @@ renderHeader('Simplex - Offerte');
 
 <div class="card"><div class="card-header">Elenco Offerte</div><div class="table-responsive"><table class="table table-striped table-hover mb-0 align-middle"><thead class="table-light"><tr><th>Protocollo</th><th>Status</th><th>Azienda</th><th>Servizio</th><th>Importo</th><th>Data Offerta</th><th>Scadenza</th><th>Commessa</th><th>Consulente</th><th>Azioni</th></tr></thead><tbody>
 <?php if(!$offerte): ?><tr><td colspan="10" class="text-center text-muted py-4">Nessuna offerta trovata.</td></tr><?php endif; ?>
-<?php foreach($offerte as $offerta): ?><tr><td><?= htmlspecialchars($offerta['protocollo']) ?></td><td><span class="badge text-bg-<?= $offerta['stato']==='Aggiudicata'?'success':($offerta['stato']==='Scaduta'?'secondary':'primary') ?>"><?= htmlspecialchars($offerta['stato']) ?></span></td><td><?= htmlspecialchars($offerta['azienda_nome'] ?? '-') ?></td><td><?= htmlspecialchars($offerta['servizio']) ?></td><td>€ <?= number_format((float)($offerta['importo_totale'] ?? 0), 2, ',', '.') ?></td><td><?= htmlspecialchars(formatDateIt($offerta['data_offerta'] ?? null)) ?></td><td><?= htmlspecialchars(formatDateIt($offerta['data_scadenza'] ?? null)) ?></td><td><?= htmlspecialchars($offerta['commessa_protocollo']??'-') ?></td><td><?= htmlspecialchars($offerta['commessa_consulente']??'-') ?></td><td><div class="d-flex gap-1"><a class="btn btn-sm btn-outline-primary" href="offerte.php?edit=<?= (int)$offerta['id'] ?>">Modifica</a><a class="btn btn-sm btn-outline-dark" href="lavorazioni.php?offerta_id=<?= (int)$offerta['id'] ?>">Lavorazioni</a><form method="post" onsubmit="return confirm('Confermi eliminazione offerta?');"><input type="hidden" name="azione" value="delete"><input type="hidden" name="id" value="<?= (int)$offerta['id'] ?>"><button class="btn btn-sm btn-outline-danger" type="submit">Elimina</button></form></div></td></tr><?php endforeach; ?>
+<?php foreach($offerte as $offerta): ?>
+<tr>
+    <td><?= htmlspecialchars($offerta['protocollo']) ?></td>
+    <td><span class="badge text-bg-<?= $offerta['stato']==='Aggiudicata'?'success':($offerta['stato']==='Scaduta'?'secondary':'primary') ?>"><?= htmlspecialchars($offerta['stato']) ?></span></td>
+    <td><?= htmlspecialchars($offerta['azienda_nome'] ?? '-') ?></td>
+    <td><?= htmlspecialchars($offerta['servizio']) ?></td>
+    <td>€ <?= number_format((float)($offerta['importo_totale'] ?? 0), 2, ',', '.') ?></td>
+    <td><?= htmlspecialchars(formatDateIt($offerta['data_offerta'] ?? null)) ?></td>
+    <td><?= htmlspecialchars(formatDateIt($offerta['data_scadenza'] ?? null)) ?></td>
+    <td>
+        <?php if (!empty($offerta['commessa_id'])): ?>
+            <div class="d-flex align-items-center gap-2">
+                <span><?= htmlspecialchars($offerta['commessa_protocollo'] ?? '-') ?></span>
+                <a class="btn btn-sm btn-outline-success" href="commesse.php?edit=<?= (int)$offerta['commessa_id'] ?>" title="Apri commessa collegata" aria-label="Apri commessa collegata">📂</a>
+            </div>
+        <?php else: ?>
+            -
+        <?php endif; ?>
+    </td>
+    <td><?= htmlspecialchars($offerta['commessa_consulente']??'-') ?></td>
+    <td><div class="d-flex gap-1"><a class="btn btn-sm btn-outline-primary" href="offerte.php?edit=<?= (int)$offerta['id'] ?>">Modifica</a><a class="btn btn-sm btn-outline-dark" href="lavorazioni.php?offerta_id=<?= (int)$offerta['id'] ?>">Lavorazioni</a><form method="post" onsubmit="return confirm('Confermi eliminazione offerta?');"><input type="hidden" name="azione" value="delete"><input type="hidden" name="id" value="<?= (int)$offerta['id'] ?>"><button class="btn btn-sm btn-outline-danger" type="submit">Elimina</button></form></div></td>
+</tr>
+<?php endforeach; ?>
 </tbody></table></div></div>
 </main></div></div>
 
