@@ -32,7 +32,7 @@ $success = null;
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['azione'] ?? '') === 'registra_pagamento') {
     $fatturaId = (int) ($_POST['fattura_id'] ?? 0);
-    $dataPagamento = trim((string) ($_POST['data_pagamento'] ?? ''));
+    $dataPagamento = normalizeDateForDb($_POST['data_pagamento'] ?? '') ?? '';
     $modalitaPagamento = trim((string) ($_POST['modalita_pagamento'] ?? ''));
 
     if ($fatturaId <= 0) {
@@ -181,7 +181,7 @@ renderHeader('Simplex - Fatture');
                         <div class="col-md-3"><strong>Commessa:</strong> <?= htmlspecialchars($fatturaDettaglio['commessa_protocollo'] ?? '-') ?></div>
                         <div class="col-md-3"><strong>Importo:</strong> € <?= number_format((float)$fatturaDettaglio['importo'], 2, ',', '.') ?></div>
                         <div class="col-md-6"><strong>Stato pagamento:</strong> <?= ((int)$fatturaDettaglio['pagata'] === 1) ? 'Pagata' : 'Da pagare' ?></div>
-                        <div class="col-md-6"><strong>Dettaglio pagamento:</strong> <?= htmlspecialchars(($fatturaDettaglio['data_pagamento'] ?? '-') . ' / ' . ($fatturaDettaglio['modalita_pagamento'] ?? '-')) ?></div>
+                        <div class="col-md-6"><strong>Dettaglio pagamento:</strong> <?= htmlspecialchars(formatDateIt($fatturaDettaglio['data_pagamento'] ?? null) . ' / ' . ($fatturaDettaglio['modalita_pagamento'] ?? '-')) ?></div>
                     </div>
                 </div>
             <?php endif; ?>
@@ -223,7 +223,7 @@ renderHeader('Simplex - Fatture');
                                 <td><?= htmlspecialchars($fattura['commessa_protocollo'] ?? '-') ?></td>
                                 <td>€ <?= number_format((float)$fattura['importo'], 2, ',', '.') ?></td>
                                 <td><?= ((int)$fattura['pagata'] === 1) ? 'Pagata' : 'Da pagare' ?></td>
-                                <td><?= htmlspecialchars(($fattura['data_pagamento'] ?? '-') . ' / ' . ($fattura['modalita_pagamento'] ?? '-')) ?></td>
+                                <td><?= htmlspecialchars(formatDateIt($fattura['data_pagamento'] ?? null) . ' / ' . ($fattura['modalita_pagamento'] ?? '-')) ?></td>
                                 <td>
                                     <a class="btn btn-sm btn-outline-primary" href="fatture.php?view=<?= (int)$fattura['id'] ?>">📄</a>
                                     <button
@@ -259,7 +259,7 @@ renderHeader('Simplex - Fatture');
                     <input type="hidden" name="fattura_id" id="fatturaIdModal" value="">
                     <div class="mb-3">
                         <label class="form-label">Data ricezione pagamento</label>
-                        <input type="date" class="form-control" name="data_pagamento" required>
+                        <input class="form-control" name="data_pagamento" placeholder="gg/mm/aaaa" required>
                     </div>
                     <div class="mb-3">
                         <label class="form-label">Modalità pagamento</label>
