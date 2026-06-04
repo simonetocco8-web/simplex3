@@ -156,7 +156,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if ($azione === 'save') {
         $id = (int) ($_POST['id'] ?? 0);
-        $dataRali = trim($_POST['data_rali'] ?? '');
+        $dataRali = normalizeDateForDb($_POST['data_rali'] ?? '') ?? '';
         $dtgUtenteId = ($_POST['dtg_utente_id'] ?? '') !== '' ? (int) $_POST['dtg_utente_id'] : null;
         $budgetRaw = str_replace(',', '.', trim($_POST['budget'] ?? ''));
         $enteCertificazioneId = ($_POST['ente_certificazione_id'] ?? '') !== '' ? (int) $_POST['ente_certificazione_id'] : null;
@@ -465,7 +465,7 @@ renderHeader('Simplex - Commesse');
                             <input type="hidden" name="azione" value="save">
                             <input type="hidden" name="id" value="<?= (int)$commessaInModifica['id'] ?>">
 
-                            <div class="col-md-3"><label class="form-label">Data R.A.L.I</label><input type="date" class="form-control" name="data_rali" value="<?= htmlspecialchars($commessaInModifica['data_rali'] ?? '') ?>"></div>
+                            <div class="col-md-3"><label class="form-label">Data R.A.L.I</label><input class="form-control" name="data_rali" placeholder="gg/mm/aaaa" value="<?= htmlspecialchars(formatDateInputIt($commessaInModifica['data_rali'] ?? '')) ?>"></div>
                             <div class="col-md-3"><label class="form-label">DTG</label><select class="form-select" name="dtg_utente_id"><option value="">-- Seleziona --</option><?php foreach ($utenti as $utente): ?><option value="<?= (int)$utente['id'] ?>" <?= ((int)($commessaInModifica['dtg_utente_id'] ?? 0) === (int)$utente['id']) ? 'selected' : '' ?>><?= htmlspecialchars($utente['nome'] . ' ' . $utente['cognome']) ?></option><?php endforeach; ?></select></div>
                             <div class="col-md-3"><label class="form-label">Budget (€)</label><input type="number" min="0" step="0.01" class="form-control" name="budget" value="<?= htmlspecialchars((string)($commessaInModifica['budget'] ?? '')) ?>"></div>
                             <div class="col-md-3"><label class="form-label">Ragione Sociale Cliente</label><select class="form-select" name="azienda_cliente_id"><option value="">-- Seleziona --</option><?php foreach ($aziende as $azienda): ?><option value="<?= (int)$azienda['id'] ?>" <?= ((int)($commessaInModifica['azienda_cliente_id'] ?? 0) === (int)$azienda['id']) ? 'selected' : '' ?>><?= htmlspecialchars($azienda['ragione_sociale']) ?></option><?php endforeach; ?></select></div>
@@ -494,7 +494,7 @@ renderHeader('Simplex - Commesse');
                                 <?php endif; ?>
                                 <?php foreach ($momentiCommessa as $momento): ?>
                                     <tr>
-                                        <td><?= htmlspecialchars($momento['data_momento']) ?></td>
+                                        <td><?= htmlspecialchars(formatDateIt($momento['data_momento'] ?? null)) ?></td>
                                         <td><?= htmlspecialchars($momento['tipologia']) ?></td>
                                         <td><?= htmlspecialchars((string)$momento['valore_giornaliero_uomo']) ?></td>
                                         <td><?= htmlspecialchars((string)($momento['costo_totale'] ?? '0.00')) ?></td>
@@ -502,7 +502,7 @@ renderHeader('Simplex - Commesse');
                                         <td><?= htmlspecialchars((string)$momento['giorni']) ?></td>
                                         <td><?= htmlspecialchars((string)$momento['numero_incontri']) ?></td>
                                         <td><?= htmlspecialchars($momento['ore_studio'] ?? '-') ?></td>
-                                        <td><?= htmlspecialchars($momento['data_prevista'] ?? '-') ?></td>
+                                        <td><?= htmlspecialchars(formatDateIt($momento['data_prevista'] ?? null)) ?></td>
                                         <td>
                                             <?php if ((int)($momento['completato'] ?? 0) === 1): ?>
                                                 <span class="badge text-bg-success">Sì</span>
@@ -549,7 +549,7 @@ renderHeader('Simplex - Commesse');
                                 <?php if (!$filesCommessa): ?><tr><td colspan="5" class="text-center text-muted py-3">Nessun file caricato.</td></tr><?php endif; ?>
                                 <?php foreach ($filesCommessa as $file): ?>
                                     <tr>
-                                        <td><?= htmlspecialchars($file['nome_originale']) ?></td><td><?= htmlspecialchars($file['mime_type'] ?? '-') ?></td><td><?= htmlspecialchars((string)$file['dimensione_bytes']) ?> bytes</td><td><?= htmlspecialchars($file['caricato_il']) ?></td>
+                                        <td><?= htmlspecialchars($file['nome_originale']) ?></td><td><?= htmlspecialchars($file['mime_type'] ?? '-') ?></td><td><?= htmlspecialchars((string)$file['dimensione_bytes']) ?> bytes</td><td><?= htmlspecialchars(formatDateIt($file['caricato_il'] ?? null)) ?></td>
                                         <td><a class="btn btn-sm btn-outline-secondary" href="download_commessa_file.php?id=<?= (int)$file['id'] ?>&mode=view" target="_blank">Visualizza</a> <a class="btn btn-sm btn-outline-primary" href="download_commessa_file.php?id=<?= (int)$file['id'] ?>&mode=download">Scarica</a></td>
                                     </tr>
                                 <?php endforeach; ?>
@@ -592,7 +592,7 @@ renderHeader('Simplex - Commesse');
                                 <td><?= htmlspecialchars((string)$commessa['anno_riferimento']) ?></td>
                                 <td><?= htmlspecialchars($commessa['consulente_nome']) ?></td>
                                 <td><?php if (!empty($commessa['offerta_id'])): ?><a href="offerte.php?view=<?= (int)$commessa['offerta_id'] ?>"><?= htmlspecialchars($commessa['offerta_protocollo'] ?? '-') ?></a><?php else: ?>-<?php endif; ?></td>
-                                <td><?= htmlspecialchars($commessa['data_rali'] ?? '-') ?></td>
+                                <td><?= htmlspecialchars(formatDateIt($commessa['data_rali'] ?? null)) ?></td>
                                 <td><?= htmlspecialchars($commessa['dtg_nome'] ?? '-') ?></td>
                                 <td><?= htmlspecialchars((string)($commessa['budget'] ?? '-')) ?></td>
                                 <td><?= htmlspecialchars($commessa['azienda_cliente_nome'] ?? '-') ?></td>

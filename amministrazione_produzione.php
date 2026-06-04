@@ -46,7 +46,7 @@ foreach ($filters as $field) {
             break;
         case 'data_rali':
             $where[] = 'c.data_rali = :f_data_rali';
-            $params[':f_data_rali'] = $value;
+            $params[':f_data_rali'] = normalizeDateForDb($value);
             break;
         case 'budget_min':
             if (is_numeric(str_replace(',', '.', $value))) {
@@ -151,7 +151,7 @@ renderHeader('Simplex - Amministrazione / Produzione');
                         <div class="col-md-2"><input class="form-control" name="f_consulente_nome" placeholder="Consulente" value="<?= htmlspecialchars($_GET['f_consulente_nome'] ?? '') ?>"></div>
                         <div class="col-md-2"><input class="form-control" name="f_offerta_protocollo" placeholder="Prot. Offerta" value="<?= htmlspecialchars($_GET['f_offerta_protocollo'] ?? '') ?>"></div>
                         <div class="col-md-2"><input class="form-control" name="f_offerta_stato" placeholder="Stato Offerta" value="<?= htmlspecialchars($_GET['f_offerta_stato'] ?? '') ?>"></div>
-                        <div class="col-md-2"><input type="date" class="form-control" name="f_data_rali" value="<?= htmlspecialchars($_GET['f_data_rali'] ?? '') ?>"></div>
+                        <div class="col-md-2"><input class="form-control" name="f_data_rali" placeholder="gg/mm/aaaa" value="<?= htmlspecialchars($_GET['f_data_rali'] ?? '') ?>"></div>
 
                         <div class="col-md-3">
                             <select class="form-select" name="f_dtg_utente_id">
@@ -212,7 +212,7 @@ renderHeader('Simplex - Amministrazione / Produzione');
                                 <td><?= htmlspecialchars($commessa['consulente_nome']) ?></td>
                                 <td><?= htmlspecialchars($commessa['offerta_protocollo'] ?? '-') ?></td>
                                 <td><?= htmlspecialchars($commessa['offerta_stato'] ?? '-') ?></td>
-                                <td><?= htmlspecialchars($commessa['data_rali'] ?? '-') ?></td>
+                                <td><?= htmlspecialchars(formatDateIt($commessa['data_rali'] ?? null)) ?></td>
                                 <td><?= htmlspecialchars($commessa['dtg_nome'] ?? '-') ?></td>
                                 <td>
                                     <?php if (isset($commessa['budget']) && $commessa['budget'] !== null && $commessa['budget'] !== ''): ?>

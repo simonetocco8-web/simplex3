@@ -66,7 +66,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $id = (int) ($_POST['id'] ?? 0);
         $tipologia = trim($_POST['tipologia'] ?? '');
         $importoEuro = str_replace(',', '.', trim($_POST['importo_euro'] ?? ''));
-        $dataPrevista = trim($_POST['data_prevista'] ?? '');
+        $dataPrevista = normalizeDateForDb($_POST['data_prevista'] ?? '') ?? '';
         $fatturazione = isset($_POST['fatturazione']) ? 1 : 0;
         $valoreGiornoUomo = str_replace(',', '.', trim($_POST['valore_giorno_uomo'] ?? ''));
         $ore = str_replace(',', '.', trim($_POST['ore'] ?? ''));
@@ -230,7 +230,7 @@ renderHeader('Simplex - Fasi di Lavorazioni');
                         </div>
                         <div class="col-md-3">
                             <label class="form-label">Data Prevista</label>
-                            <input type="date" class="form-control" name="data_prevista" required value="<?= htmlspecialchars($lavorazioneInModifica['data_prevista'] ?? '') ?>">
+                            <input class="form-control" name="data_prevista" placeholder="gg/mm/aaaa" required value="<?= htmlspecialchars(formatDateInputIt($lavorazioneInModifica['data_prevista'] ?? '')) ?>">
                         </div>
                         <div class="col-md-3 d-flex align-items-end">
                             <div class="form-check form-switch">
@@ -286,7 +286,7 @@ renderHeader('Simplex - Fasi di Lavorazioni');
                             <tr>
                                 <td><?= htmlspecialchars($lav['tipologia']) ?></td>
                                 <td><?= htmlspecialchars((string)$lav['importo_euro']) ?></td>
-                                <td><?= htmlspecialchars($lav['data_prevista']) ?></td>
+                                <td><?= htmlspecialchars(formatDateIt($lav['data_prevista'] ?? null)) ?></td>
                                 <td><?= ((int)$lav['fatturazione'] === 1) ? 'Sì' : 'No' ?></td>
                                 <td><?= htmlspecialchars((string)$lav['valore_giorno_uomo']) ?></td>
                                 <td><?= htmlspecialchars((string)$lav['ore']) ?></td>
