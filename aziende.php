@@ -4,6 +4,7 @@ require_once __DIR__ . '/includes/layout.php';
 require_once __DIR__ . '/includes/auth.php';
 
 $TIPOLOGIE_AZIENDA = ['Promotore', 'Fornitore', 'Partner', 'Cliente'];
+$TIPI_SEDE = ['Legale', 'Amministrativa', 'Operativa'];
 $ORGANICO_OPTIONS = ['0-10', '10-50', '50-250', '250+'];
 $FATTURATO_OPTIONS = ['< 2 Mln', '< 10 Mln', '< 50 Mln', '> 50 Mln'];
 $REGIONI_ITALIA = ['Abruzzo', 'Basilicata', 'Calabria', 'Campania', 'Emilia-Romagna', 'Friuli Venezia Giulia', 'Lazio', 'Liguria', 'Lombardia', 'Marche', 'Molise', 'Piemonte', 'Puglia', 'Sardegna', 'Sicilia', 'Toscana', 'Trentino-Alto Adige/Südtirol', 'Umbria', "Valle d'Aosta/Vallée d'Aoste", 'Veneto'];
@@ -95,6 +96,23 @@ if (!in_array('comune', $columnsAziende, true)) {
 $pdo->exec("ALTER TABLE aziende MODIFY COLUMN fatturato VARCHAR(20) NOT NULL");
 
 $pdo->exec(
+    "CREATE TABLE IF NOT EXISTS aziende_sedi (
+        id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+        azienda_id INT UNSIGNED NOT NULL,
+        tipo_sede VARCHAR(30) NOT NULL,
+        via VARCHAR(120) NOT NULL,
+        numero_civico VARCHAR(10) NOT NULL,
+        cap VARCHAR(10) NOT NULL,
+        regione VARCHAR(60) NOT NULL,
+        provincia VARCHAR(2) NOT NULL,
+        comune VARCHAR(120) NOT NULL,
+        creato_il TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        aggiornato_il TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        CONSTRAINT fk_aziende_sedi_azienda FOREIGN KEY (azienda_id) REFERENCES aziende(id) ON DELETE CASCADE
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
+);
+
+$pdo->exec(
     "CREATE TABLE IF NOT EXISTS aziende_file (
         id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
         azienda_id INT UNSIGNED NOT NULL,
@@ -117,6 +135,8 @@ $editId = isset($_GET['edit']) ? (int) $_GET['edit'] : 0;
 $aziendaInModifica = null;
 $aziendaInVisualizzazione = null;
 $filesAzienda = [];
+$sediAzienda = [];
+$sediForm = [];
 
 if ($viewId > 0) {
     $stmt = $pdo->prepare('SELECT * FROM aziende WHERE id = :id');
@@ -126,6 +146,9 @@ if ($viewId > 0) {
         $stmtFiles = $pdo->prepare('SELECT * FROM aziende_file WHERE azienda_id = :azienda_id ORDER BY caricato_il DESC');
         $stmtFiles->execute([':azienda_id' => $viewId]);
         $filesAzienda = $stmtFiles->fetchAll();
+        $stmtSedi = $pdo->prepare('SELECT * FROM aziende_sedi WHERE azienda_id = :azienda_id ORDER BY FIELD(tipo_sede, "Legale", "Amministrativa", "Operativa"), id');
+        $stmtSedi->execute([':azienda_id' => $viewId]);
+        $sediAzienda = $stmtSedi->fetchAll();
     }
 }
 
@@ -135,6 +158,10 @@ if ($editId > 0) {
     $aziendaInModifica = $stmt->fetch();
     if (!$aziendaInModifica) {
         $errors[] = 'Azienda da modificare non trovata.';
+    } else {
+        $stmtSedi = $pdo->prepare('SELECT * FROM aziende_sedi WHERE azienda_id = :azienda_id ORDER BY FIELD(tipo_sede, "Legale", "Amministrativa", "Operativa"), id');
+        $stmtSedi->execute([':azienda_id' => $editId]);
+        $sediForm = $stmtSedi->fetchAll();
     }
 }
 
@@ -193,6 +220,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $stmtFiles = $pdo->prepare('SELECT * FROM aziende_file WHERE azienda_id = :azienda_id ORDER BY caricato_il DESC');
                         $stmtFiles->execute([':azienda_id' => $viewId]);
                         $filesAzienda = $stmtFiles->fetchAll();
+                        $stmtSedi = $pdo->prepare('SELECT * FROM aziende_sedi WHERE azienda_id = :azienda_id ORDER BY FIELD(tipo_sede, "Legale", "Amministrativa", "Operativa"), id');
+                        $stmtSedi->execute([':azienda_id' => $viewId]);
+                        $sediAzienda = $stmtSedi->fetchAll();
                     }
                 }
             }
@@ -211,12 +241,39 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $pec = trim($_POST['pec'] ?? '');
         $email = trim($_POST['email'] ?? '');
         $urlSito = trim($_POST['url_sito'] ?? '');
-        $via = trim($_POST['via'] ?? '');
-        $numeroCivico = trim($_POST['numero_civico'] ?? '');
-        $cap = trim($_POST['cap'] ?? '');
-        $regione = trim($_POST['regione'] ?? '');
-        $provincia = strtoupper(trim($_POST['provincia'] ?? ''));
-        $comune = trim($_POST['comune'] ?? '');
+        $sediInput = [];
+        $sedeTipi = $_POST['sede_tipo'] ?? [];
+        $sedeVie = $_POST['sede_via'] ?? [];
+        $sedeNumeriCivici = $_POST['sede_numero_civico'] ?? [];
+        $sedeCap = $_POST['sede_cap'] ?? [];
+        $sedeRegioni = $_POST['sede_regione'] ?? [];
+        $sedeProvince = $_POST['sede_provincia'] ?? [];
+        $sedeComuni = $_POST['sede_comune'] ?? [];
+        $maxSedi = max(
+            is_array($sedeTipi) ? count($sedeTipi) : 0,
+            is_array($sedeVie) ? count($sedeVie) : 0,
+            is_array($sedeNumeriCivici) ? count($sedeNumeriCivici) : 0,
+            is_array($sedeCap) ? count($sedeCap) : 0,
+            is_array($sedeRegioni) ? count($sedeRegioni) : 0,
+            is_array($sedeProvince) ? count($sedeProvince) : 0,
+            is_array($sedeComuni) ? count($sedeComuni) : 0
+        );
+        for ($i = 0; $i < $maxSedi; $i++) {
+            $sede = [
+                'tipo_sede' => trim((string)($sedeTipi[$i] ?? '')),
+                'via' => trim((string)($sedeVie[$i] ?? '')),
+                'numero_civico' => trim((string)($sedeNumeriCivici[$i] ?? '')),
+                'cap' => trim((string)($sedeCap[$i] ?? '')),
+                'regione' => trim((string)($sedeRegioni[$i] ?? '')),
+                'provincia' => strtoupper(trim((string)($sedeProvince[$i] ?? ''))),
+                'comune' => trim((string)($sedeComuni[$i] ?? '')),
+            ];
+            if (implode('', $sede) === '') {
+                continue;
+            }
+            $sediInput[] = $sede;
+        }
+        $sediForm = $sediInput;
         $rcoUtenteId = ($_POST['rco_utente_id'] ?? '') !== '' ? (int) $_POST['rco_utente_id'] : null;
         $segnalataDaUtenteId = ($_POST['segnalata_da_utente_id'] ?? '') !== '' ? (int) $_POST['segnalata_da_utente_id'] : null;
         $categoria = trim($_POST['categoria'] ?? '');
@@ -246,6 +303,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         if (!is_array($tipologiaAzienda) || count($tipologiaAzienda) === 0) {
             $errors[] = 'Seleziona almeno una Tipologia di Azienda.';
+        }
+
+        if (!$sediInput) {
+            $errors[] = 'Inserisci almeno una sede aziendale.';
+        }
+        foreach ($sediInput as $index => $sede) {
+            $numeroSede = $index + 1;
+            if (!in_array($sede['tipo_sede'], $TIPI_SEDE, true)) {
+                $errors[] = "Tipo sede non valido per la sede {$numeroSede}.";
+            }
+            if ($sede['via'] === '' || $sede['numero_civico'] === '' || $sede['cap'] === '' || $sede['regione'] === '' || $sede['provincia'] === '' || $sede['comune'] === '') {
+                $errors[] = "Completa tutti i campi della sede {$numeroSede}.";
+            }
+            if ($sede['cap'] !== '' && !preg_match('/^\d{5}$/', $sede['cap'])) {
+                $errors[] = "CAP non valido per la sede {$numeroSede}: inserire 5 numeri.";
+            }
+            if ($sede['provincia'] !== '' && !preg_match('/^[A-Z]{2}$/', $sede['provincia'])) {
+                $errors[] = "Provincia non valida per la sede {$numeroSede}: inserire la sigla di 2 lettere.";
+            }
         }
 
         if (!in_array($organicoMedio, $ORGANICO_OPTIONS, true)) {
@@ -285,13 +361,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 ':pec' => $pec !== '' ? $pec : null,
                 ':email' => $email !== '' ? $email : null,
                 ':url_sito' => $urlSito !== '' ? $urlSito : null,
-                ':via' => $via !== '' ? $via : null,
-                ':numero_civico' => $numeroCivico !== '' ? $numeroCivico : null,
-                ':cap' => $cap !== '' ? $cap : null,
-                ':localita' => $comune !== '' ? $comune : null,
-                ':regione' => $regione !== '' ? $regione : null,
-                ':provincia' => $provincia !== '' ? $provincia : null,
-                ':comune' => $comune !== '' ? $comune : null,
                 ':rco_utente_id' => $rcoUtenteId,
                 ':segnalata_da_utente_id' => $segnalataDaUtenteId,
                 ':categoria' => $categoria !== '' ? $categoria : null,
@@ -316,13 +385,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             pec = :pec,
                             email = :email,
                             url_sito = :url_sito,
-                            via = :via,
-                            numero_civico = :numero_civico,
-                            cap = :cap,
-                            localita = :localita,
-                            regione = :regione,
-                            provincia = :provincia,
-                            comune = :comune,
                             rco_utente_id = :rco_utente_id,
                             segnalata_da_utente_id = :segnalata_da_utente_id,
                             categoria = :categoria,
@@ -338,26 +400,53 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             } else {
                 $sql = 'INSERT INTO aziende (
                             partita_iva, codice_fiscale, ragione_sociale, iban, tipologia_azienda, codice_fatturazione,
-                            telefono, pec, email, url_sito, via, numero_civico, cap, localita, regione, provincia, comune,
+                            telefono, pec, email, url_sito,
                             rco_utente_id, segnalata_da_utente_id, categoria, ea, organico_medio, fatturato,
                             conosciuto_come, principali_prodotti, note, promotore_azienda_id
                         ) VALUES (
                             :partita_iva, :codice_fiscale, :ragione_sociale, :iban, :tipologia_azienda, :codice_fatturazione,
-                            :telefono, :pec, :email, :url_sito, :via, :numero_civico, :cap, :localita, :regione, :provincia, :comune,
+                            :telefono, :pec, :email, :url_sito,
                             :rco_utente_id, :segnalata_da_utente_id, :categoria, :ea, :organico_medio, :fatturato,
                             :conosciuto_come, :principali_prodotti, :note, :promotore_azienda_id
                         )';
             }
 
             try {
+                $pdo->beginTransaction();
                 $stmt = $pdo->prepare($sql);
                 $stmt->execute($params);
+                $aziendaId = $id > 0 ? $id : (int) $pdo->lastInsertId();
+
+                $stmtDeleteSedi = $pdo->prepare('DELETE FROM aziende_sedi WHERE azienda_id = :azienda_id');
+                $stmtDeleteSedi->execute([':azienda_id' => $aziendaId]);
+                $stmtInsertSede = $pdo->prepare(
+                    'INSERT INTO aziende_sedi (azienda_id, tipo_sede, via, numero_civico, cap, regione, provincia, comune)
+                     VALUES (:azienda_id, :tipo_sede, :via, :numero_civico, :cap, :regione, :provincia, :comune)'
+                );
+                foreach ($sediInput as $sede) {
+                    $stmtInsertSede->execute([
+                        ':azienda_id' => $aziendaId,
+                        ':tipo_sede' => $sede['tipo_sede'],
+                        ':via' => $sede['via'],
+                        ':numero_civico' => $sede['numero_civico'],
+                        ':cap' => $sede['cap'],
+                        ':regione' => $sede['regione'],
+                        ':provincia' => $sede['provincia'],
+                        ':comune' => $sede['comune'],
+                    ]);
+                }
+                $pdo->commit();
+
                 $success = $id > 0 ? 'Azienda aggiornata correttamente.' : 'Azienda creata correttamente.';
                 $action = 'list';
                 $editId = 0;
                 $aziendaInModifica = null;
+                $sediForm = [];
                 $aziendePromotori = $pdo->query("SELECT id, ragione_sociale FROM aziende WHERE FIND_IN_SET('Promotore', tipologia_azienda) > 0 ORDER BY ragione_sociale")->fetchAll();
             } catch (PDOException $e) {
+                if ($pdo->inTransaction()) {
+                    $pdo->rollBack();
+                }
                 if ((int) ($e->errorInfo[1] ?? 0) === 1062) {
                     $errors[] = 'Partita IVA già presente nel sistema.';
                 } else {
@@ -418,7 +507,13 @@ $utenteLoggato = currentUser();
 renderHeader('Simplex - Aziende');
 
 $formData = $aziendaInModifica ?: [];
-$formTipologie = isset($formData['tipologia_azienda']) ? explode(',', (string) $formData['tipologia_azienda']) : [];
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['azione'] ?? '') === 'save' && $errors) {
+    $formData = $_POST;
+}
+$formTipologie = isset($formData['tipologia_azienda'])
+    ? (is_array($formData['tipologia_azienda']) ? $formData['tipologia_azienda'] : explode(',', (string) $formData['tipologia_azienda']))
+    : [];
+$sediFormJson = json_encode($sediForm, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT);
 ?>
 <div class="container-fluid">
     <div class="row">
@@ -519,29 +614,35 @@ $formTipologie = isset($formData['tipologia_azienda']) ? explode(',', (string) $
                             <div class="col-md-4"><label class="form-label">PEC</label><input type="email" class="form-control" name="pec" value="<?= htmlspecialchars($formData['pec'] ?? '') ?>"></div>
                             <div class="col-md-4"><label class="form-label">Email</label><input type="email" class="form-control" name="email" value="<?= htmlspecialchars($formData['email'] ?? '') ?>"></div>
                             <div class="col-md-4"><label class="form-label">Url sito</label><input class="form-control" name="url_sito" value="<?= htmlspecialchars($formData['url_sito'] ?? '') ?>"></div>
-                            <div class="col-md-4"><label class="form-label">Via</label><input class="form-control" name="via" value="<?= htmlspecialchars($formData['via'] ?? '') ?>"></div>
-                            <div class="col-md-2"><label class="form-label">Numero civico</label><input class="form-control" name="numero_civico" value="<?= htmlspecialchars($formData['numero_civico'] ?? '') ?>"></div>
-                            <div class="col-md-2"><label class="form-label">CAP</label><input class="form-control" name="cap" value="<?= htmlspecialchars($formData['cap'] ?? '') ?>"></div>
-                            <div class="col-md-4">
-                                <label class="form-label">Regione</label>
-                                <select class="form-select js-regione" name="regione" data-selected="<?= htmlspecialchars($formData['regione'] ?? '') ?>">
-                                    <option value="">-- Seleziona --</option>
-                                    <?php foreach ($REGIONI_ITALIA as $regione): ?>
-                                        <option value="<?= htmlspecialchars($regione) ?>" <?= (($formData['regione'] ?? '') === $regione) ? 'selected' : '' ?>><?= htmlspecialchars($regione) ?></option>
-                                    <?php endforeach; ?>
-                                </select>
-                            </div>
-                            <div class="col-md-4">
-                                <label class="form-label">Provincia</label>
-                                <select class="form-select js-provincia" name="provincia" data-selected="<?= htmlspecialchars($formData['provincia'] ?? '') ?>">
-                                    <option value="">-- Seleziona prima la regione --</option>
-                                </select>
-                            </div>
-                            <div class="col-md-4">
-                                <label class="form-label">Comuni</label>
-                                <select class="form-select js-comune" name="comune" data-selected="<?= htmlspecialchars($formData['comune'] ?? ($formData['localita'] ?? '')) ?>">
-                                    <option value="">-- Seleziona prima la provincia --</option>
-                                </select>
+
+                            <div class="col-12">
+                                <div class="card border-secondary-subtle">
+                                    <div class="card-header d-flex justify-content-between align-items-center">
+                                        <span>Sedi aziendali *</span>
+                                        <button class="btn btn-sm btn-outline-primary" type="button" data-bs-toggle="modal" data-bs-target="#modalSede">Aggiungi Sede</button>
+                                    </div>
+                                    <div class="card-body">
+                                        <div id="sedi-hidden-fields"></div>
+                                        <div class="table-responsive">
+                                            <table class="table table-sm align-middle mb-0">
+                                                <thead>
+                                                    <tr>
+                                                        <th>Tipo sede</th>
+                                                        <th>Indirizzo</th>
+                                                        <th>CAP</th>
+                                                        <th>Comune</th>
+                                                        <th>Provincia</th>
+                                                        <th>Regione</th>
+                                                        <th>Azioni</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody id="sedi-table-body">
+                                                    <tr id="sedi-empty-row"><td colspan="7" class="text-center text-muted py-3">Nessuna sede inserita.</td></tr>
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
 
                             <div class="col-md-4">
@@ -635,6 +736,59 @@ $formTipologie = isset($formData['tipologia_azienda']) ? explode(',', (string) $
                         </form>
                     </div>
                 </div>
+
+                <div class="modal fade" id="modalSede" tabindex="-1" aria-labelledby="modalSedeLabel" aria-hidden="true">
+                    <div class="modal-dialog modal-lg">
+                        <div class="modal-content">
+                            <div class="modal-header">
+                                <h5 class="modal-title" id="modalSedeLabel">Aggiungi Sede</h5>
+                                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Chiudi"></button>
+                            </div>
+                            <div class="modal-body">
+                                <div class="row g-3" id="sede-modal-form">
+                                    <div class="col-md-4">
+                                        <label class="form-label">Tipo sede *</label>
+                                        <select class="form-select" id="sede_tipo">
+                                            <option value="">-- Seleziona --</option>
+                                            <?php foreach ($TIPI_SEDE as $tipoSede): ?>
+                                                <option value="<?= htmlspecialchars($tipoSede) ?>"><?= htmlspecialchars($tipoSede) ?></option>
+                                            <?php endforeach; ?>
+                                        </select>
+                                    </div>
+                                    <div class="col-md-6"><label class="form-label">Via *</label><input class="form-control" id="sede_via"></div>
+                                    <div class="col-md-2"><label class="form-label">Numero civico *</label><input class="form-control" id="sede_numero_civico"></div>
+                                    <div class="col-md-3"><label class="form-label">CAP *</label><input class="form-control" id="sede_cap" maxlength="5"></div>
+                                    <div class="col-md-3">
+                                        <label class="form-label">Regione *</label>
+                                        <select class="form-select js-regione" id="sede_regione" data-selected="">
+                                            <option value="">-- Seleziona --</option>
+                                            <?php foreach ($REGIONI_ITALIA as $regione): ?>
+                                                <option value="<?= htmlspecialchars($regione) ?>"><?= htmlspecialchars($regione) ?></option>
+                                            <?php endforeach; ?>
+                                        </select>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label class="form-label">Provincia *</label>
+                                        <select class="form-select js-provincia" id="sede_provincia" data-selected="">
+                                            <option value="">-- Seleziona prima la regione --</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label class="form-label">Comune *</label>
+                                        <select class="form-select js-comune" id="sede_comune" data-selected="">
+                                            <option value="">-- Seleziona prima la provincia --</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-12"><div class="alert alert-danger d-none mb-0" id="sede-modal-error"></div></div>
+                                </div>
+                            </div>
+                            <div class="modal-footer">
+                                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Annulla</button>
+                                <button type="button" class="btn btn-primary" id="salva-sede">Salva Sede</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             <?php endif; ?>
 
             <?php if ($aziendaInVisualizzazione): ?>
@@ -643,9 +797,32 @@ $formTipologie = isset($formData['tipologia_azienda']) ? explode(',', (string) $
                     <div class="card-body">
                         <div class="row g-3">
                             <?php foreach ($aziendaInVisualizzazione as $campo => $valore): ?>
-                                <div class="col-md-4"><strong><?= htmlspecialchars((string)$campo) ?>:</strong> <?= htmlspecialchars((string)($valore ?? '-')) ?></div>
+                                <div class="col-md-4"><strong><?= htmlspecialchars((string)$campo) ?>:</strong> <?= htmlspecialchars(preg_match('/(^data_|_il$|created_at$|aggiornato_il$)/', (string)$campo) ? formatDateIt($valore) : (string)($valore ?? '-')) ?></div>
                             <?php endforeach; ?>
                         </div>
+                    </div>
+                </div>
+
+                <div class="card mb-4">
+                    <div class="card-header">Sedi Azienda</div>
+                    <div class="table-responsive">
+                        <table class="table table-sm table-striped align-middle mb-0">
+                            <thead><tr><th>Tipo sede</th><th>Via</th><th>Numero civico</th><th>CAP</th><th>Regione</th><th>Provincia</th><th>Comune</th></tr></thead>
+                            <tbody>
+                            <?php if (!$sediAzienda): ?><tr><td colspan="7" class="text-center text-muted py-3">Nessuna sede inserita.</td></tr><?php endif; ?>
+                            <?php foreach ($sediAzienda as $sede): ?>
+                                <tr>
+                                    <td><?= htmlspecialchars($sede['tipo_sede']) ?></td>
+                                    <td><?= htmlspecialchars($sede['via']) ?></td>
+                                    <td><?= htmlspecialchars($sede['numero_civico']) ?></td>
+                                    <td><?= htmlspecialchars($sede['cap']) ?></td>
+                                    <td><?= htmlspecialchars($sede['regione']) ?></td>
+                                    <td><?= htmlspecialchars($sede['provincia']) ?></td>
+                                    <td><?= htmlspecialchars($sede['comune']) ?></td>
+                                </tr>
+                            <?php endforeach; ?>
+                            </tbody>
+                        </table>
                     </div>
                 </div>
 
@@ -668,7 +845,7 @@ $formTipologie = isset($formData['tipologia_azienda']) ? explode(',', (string) $
                                         <td><?= htmlspecialchars($file['nome_originale']) ?></td>
                                         <td><?= htmlspecialchars($file['mime_type'] ?? '-') ?></td>
                                         <td><?= htmlspecialchars((string)$file['dimensione_bytes']) ?> bytes</td>
-                                        <td><?= htmlspecialchars($file['caricato_il']) ?></td>
+                                        <td><?= htmlspecialchars(formatDateIt($file['caricato_il'] ?? null)) ?></td>
                                         <td>
                                             <a class="btn btn-sm btn-outline-secondary" href="download_azienda_file.php?id=<?= (int)$file['id'] ?>&mode=view" target="_blank">Visualizza</a>
                                             <a class="btn btn-sm btn-outline-primary" href="download_azienda_file.php?id=<?= (int)$file['id'] ?>&mode=download">Scarica</a>
@@ -905,6 +1082,142 @@ async function setupGeoSelectors(scope) {
     }
 }
 
+
+const sediAziendali = <?= $sediFormJson ?: '[]' ?>;
+const sediHiddenFields = document.getElementById('sedi-hidden-fields');
+const sediTableBody = document.getElementById('sedi-table-body');
+const sedeModalForm = document.getElementById('sede-modal-form');
+const sedeModalElement = document.getElementById('modalSede');
+const sedeModalError = document.getElementById('sede-modal-error');
+
+function addHiddenInput(container, name, value) {
+    const input = document.createElement('input');
+    input.type = 'hidden';
+    input.name = name;
+    input.value = value || '';
+    container.appendChild(input);
+}
+
+function resetSedeModal() {
+    if (!sedeModalForm) return;
+    ['sede_tipo', 'sede_via', 'sede_numero_civico', 'sede_cap', 'sede_regione'].forEach((id) => {
+        const field = document.getElementById(id);
+        if (field) field.value = '';
+    });
+    const provincia = document.getElementById('sede_provincia');
+    const comune = document.getElementById('sede_comune');
+    if (provincia) fillSelectOptions(provincia, [], '-- Seleziona prima la regione --');
+    if (comune) fillSelectOptions(comune, [], '-- Seleziona prima la provincia --');
+    if (sedeModalError) {
+        sedeModalError.classList.add('d-none');
+        sedeModalError.textContent = '';
+    }
+}
+
+function renderSedi() {
+    if (!sediHiddenFields || !sediTableBody) return;
+    sediHiddenFields.innerHTML = '';
+    sediTableBody.innerHTML = '';
+
+    if (sediAziendali.length === 0) {
+        const row = document.createElement('tr');
+        const cell = document.createElement('td');
+        cell.colSpan = 7;
+        cell.className = 'text-center text-muted py-3';
+        cell.textContent = 'Nessuna sede inserita.';
+        row.appendChild(cell);
+        sediTableBody.appendChild(row);
+        return;
+    }
+
+    sediAziendali.forEach((sede, index) => {
+        addHiddenInput(sediHiddenFields, 'sede_tipo[]', sede.tipo_sede);
+        addHiddenInput(sediHiddenFields, 'sede_via[]', sede.via);
+        addHiddenInput(sediHiddenFields, 'sede_numero_civico[]', sede.numero_civico);
+        addHiddenInput(sediHiddenFields, 'sede_cap[]', sede.cap);
+        addHiddenInput(sediHiddenFields, 'sede_regione[]', sede.regione);
+        addHiddenInput(sediHiddenFields, 'sede_provincia[]', sede.provincia);
+        addHiddenInput(sediHiddenFields, 'sede_comune[]', sede.comune);
+
+        const row = document.createElement('tr');
+        [
+            sede.tipo_sede,
+            `${sede.via || ''} ${sede.numero_civico || ''}`.trim(),
+            sede.cap,
+            sede.comune,
+            sede.provincia,
+            sede.regione,
+        ].forEach((value) => {
+            const cell = document.createElement('td');
+            cell.textContent = value || '-';
+            row.appendChild(cell);
+        });
+
+        const actionsCell = document.createElement('td');
+        const removeButton = document.createElement('button');
+        removeButton.type = 'button';
+        removeButton.className = 'btn btn-sm btn-outline-danger';
+        removeButton.textContent = 'Rimuovi';
+        removeButton.addEventListener('click', () => {
+            sediAziendali.splice(index, 1);
+            renderSedi();
+        });
+        actionsCell.appendChild(removeButton);
+        row.appendChild(actionsCell);
+        sediTableBody.appendChild(row);
+    });
+}
+
+function readSedeModal() {
+    return {
+        tipo_sede: document.getElementById('sede_tipo')?.value.trim() || '',
+        via: document.getElementById('sede_via')?.value.trim() || '',
+        numero_civico: document.getElementById('sede_numero_civico')?.value.trim() || '',
+        cap: document.getElementById('sede_cap')?.value.trim() || '',
+        regione: document.getElementById('sede_regione')?.value.trim() || '',
+        provincia: document.getElementById('sede_provincia')?.value.trim().toUpperCase() || '',
+        comune: document.getElementById('sede_comune')?.value.trim() || '',
+    };
+}
+
+function validateSede(sede) {
+    if (!sede.tipo_sede || !sede.via || !sede.numero_civico || !sede.cap || !sede.regione || !sede.provincia || !sede.comune) {
+        return 'Compila tutti i campi della sede.';
+    }
+    if (!/^\d{5}$/.test(sede.cap)) {
+        return 'Il CAP deve contenere 5 numeri.';
+    }
+    if (!/^[A-Z]{2}$/.test(sede.provincia)) {
+        return 'La provincia deve essere una sigla di 2 lettere.';
+    }
+    return '';
+}
+
+if (sedeModalElement) {
+    sedeModalElement.addEventListener('hidden.bs.modal', resetSedeModal);
+}
+
+const salvaSedeButton = document.getElementById('salva-sede');
+if (salvaSedeButton) {
+    salvaSedeButton.addEventListener('click', () => {
+        const sede = readSedeModal();
+        const error = validateSede(sede);
+        if (error) {
+            if (sedeModalError) {
+                sedeModalError.textContent = error;
+                sedeModalError.classList.remove('d-none');
+            }
+            return;
+        }
+        sediAziendali.push(sede);
+        renderSedi();
+        const modal = bootstrap.Modal.getInstance(sedeModalElement) || new bootstrap.Modal(sedeModalElement);
+        modal.hide();
+    });
+}
+
+if (sedeModalForm) setupGeoSelectors(sedeModalForm);
 document.querySelectorAll('form').forEach((form) => { setupGeoSelectors(form); });
+renderSedi();
 </script>
 <?php renderFooter(); ?>

@@ -141,7 +141,7 @@ renderHeader('Simplex - Enti di Certificazione');
                         <?php foreach ($enti as $ente): ?>
                             <tr>
                                 <td><?= htmlspecialchars($ente['denominazione']) ?></td>
-                                <td><?= htmlspecialchars((string)($ente['created_at'] ?? '-')) ?></td>
+                                <td><?= htmlspecialchars(formatDateIt($ente['created_at'] ?? null)) ?></td>
                                 <td class="text-end">
                                     <form method="post" class="d-inline" onsubmit="return confirm('Confermi l\'eliminazione di questo ente?');">
                                         <input type="hidden" name="action" value="delete">
