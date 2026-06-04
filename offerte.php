@@ -95,6 +95,61 @@ function creaAziendaRapida(PDO $pdo, array $input): array
     return ['ok' => true, 'id' => (int)$pdo->lastInsertId(), 'ragione_sociale' => mb_substr($ragioneSociale, 0, 30)];
 }
 
+function sediAziendaTesto(PDO $pdo, int $aziendaId): string
+{
+    if ($aziendaId <= 0) {
+        return '';
+    }
+
+    if ((bool) $pdo->query("SHOW TABLES LIKE 'aziende_sedi'")->fetchColumn()) {
+        $stmtSedi = $pdo->prepare(
+            'SELECT tipo_sede, via, numero_civico, cap, regione, provincia, comune
+             FROM aziende_sedi
+             WHERE azienda_id = :azienda_id
+             ORDER BY FIELD(tipo_sede, "Legale", "Amministrativa", "Operativa"), id'
+        );
+        $stmtSedi->execute([':azienda_id' => $aziendaId]);
+        $righe = [];
+        foreach ($stmtSedi->fetchAll() as $sede) {
+            $indirizzo = trim((string)($sede['via'] ?? '') . ' ' . (string)($sede['numero_civico'] ?? ''));
+            $localita = trim((string)($sede['cap'] ?? '') . ' ' . (string)($sede['comune'] ?? ''));
+            $provincia = trim((string)($sede['provincia'] ?? ''));
+            if ($provincia !== '') {
+                $localita = trim($localita . ' (' . $provincia . ')');
+            }
+            $regione = trim((string)($sede['regione'] ?? ''));
+            $parti = array_filter([$indirizzo, $localita, $regione], static fn($parte) => $parte !== '');
+            if ($parti) {
+                $tipo = trim((string)($sede['tipo_sede'] ?? ''));
+                $righe[] = ($tipo !== '' ? $tipo . ': ' : '') . implode(', ', $parti);
+            }
+        }
+        if ($righe) {
+            return implode("\n", $righe);
+        }
+    }
+
+    if (!(bool) $pdo->query("SHOW TABLES LIKE 'aziende'")->fetchColumn()) {
+        return '';
+    }
+    $stmtAzienda = $pdo->prepare('SELECT via, numero_civico, cap, regione, provincia, comune, localita FROM aziende WHERE id = :id');
+    $stmtAzienda->execute([':id' => $aziendaId]);
+    $azienda = $stmtAzienda->fetch();
+    if (!$azienda) {
+        return '';
+    }
+    $indirizzo = trim((string)($azienda['via'] ?? '') . ' ' . (string)($azienda['numero_civico'] ?? ''));
+    $comune = trim((string)($azienda['comune'] ?? ($azienda['localita'] ?? '')));
+    $localita = trim((string)($azienda['cap'] ?? '') . ' ' . $comune);
+    $provincia = trim((string)($azienda['provincia'] ?? ''));
+    if ($provincia !== '') {
+        $localita = trim($localita . ' (' . $provincia . ')');
+    }
+    $regione = trim((string)($azienda['regione'] ?? ''));
+
+    return implode(', ', array_filter([$indirizzo, $localita, $regione], static fn($parte) => $parte !== ''));
+}
+
 function ensureCommessa(PDO $pdo, int $offertaId, string $consulente): ?string
 {
     $check = $pdo->prepare('SELECT id, protocollo FROM commesse WHERE offerta_id = :offerta_id LIMIT 1');
@@ -156,7 +211,7 @@ $pdo->exec("CREATE TABLE IF NOT EXISTS offerte (
     dettaglio_servizio VARCHAR(120) NOT NULL,
     stato VARCHAR(20) NOT NULL DEFAULT 'In Elaborazione',
     specifiche_oggetto TEXT NULL,
-    sede_erogazione_servizio VARCHAR(255) NULL,
+    sede_erogazione_servizio TEXT NULL,
     azienda_id INT UNSIGNED NULL,
     rco_utente_id INT UNSIGNED NULL,
     segnalato_da_utente_id INT UNSIGNED NULL,
@@ -239,6 +294,7 @@ $migrations=[
 ];
 foreach($migrations as $col=>$sql){ if(!(bool)$pdo->query("SHOW COLUMNS FROM offerte LIKE '{$col}'")->fetch()){ $pdo->exec($sql);} }
 $pdo->exec("ALTER TABLE offerte MODIFY COLUMN stato VARCHAR(20) NOT NULL DEFAULT 'In Elaborazione'");
+$pdo->exec("ALTER TABLE offerte MODIFY COLUMN sede_erogazione_servizio TEXT NULL");
 $pdo->exec("UPDATE offerte SET stato = 'In Elaborazione' WHERE stato IN ('Generata', 'In Lavorazione')");
 if (!(bool)$pdo->query("SHOW COLUMNS FROM offerta_momenti_lavorazione LIKE 'costo_totale'")->fetch()) {
     $pdo->exec("ALTER TABLE offerta_momenti_lavorazione ADD COLUMN costo_totale DECIMAL(12,2) NOT NULL DEFAULT 0 AFTER valore_giornaliero_uomo");
@@ -270,6 +326,13 @@ $aziendeTutte = [];
 if ((bool)$pdo->query("SHOW TABLES LIKE 'aziende'")->fetchColumn()) {
     $aziendePromotori = $pdo->query("SELECT id, ragione_sociale FROM aziende WHERE FIND_IN_SET('Promotore', tipologia_azienda) > 0 ORDER BY ragione_sociale")->fetchAll();
     $aziendeTutte = $pdo->query("SELECT id, ragione_sociale FROM aziende ORDER BY ragione_sociale")->fetchAll();
+}
+
+if (($_GET['ajax'] ?? '') === 'azienda_sedi') {
+    header('Content-Type: application/json; charset=utf-8');
+    $aziendaId = (int)($_GET['id'] ?? 0);
+    echo json_encode(['ok' => true, 'sedi' => sediAziendaTesto($pdo, $aziendaId)], JSON_UNESCAPED_UNICODE);
+    exit;
 }
 
 $action=$_GET['action']??'list'; $viewId=(int)($_GET['view']??0); $editId=(int)($_GET['edit']??0);
@@ -366,6 +429,9 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
         $stato=trim($_POST['stato']??'In Elaborazione'); $consulenteIncaricato=trim($_POST['consulente_incaricato']??'');
         $specificheOggetto=trim($_POST['specifiche_oggetto']??''); $sedeErogazione=trim($_POST['sede_erogazione_servizio']??'');
         $aziendaId = ($_POST['azienda_id'] ?? '') !== '' ? (int) $_POST['azienda_id'] : null;
+        if ($sedeErogazione === '' && $aziendaId !== null) {
+            $sedeErogazione = sediAziendaTesto($pdo, $aziendaId);
+        }
         $rcoUtenteId=(int)($_POST['rco_utente_id']??0); $segnalatoDaUtenteId=($_POST['segnalato_da_utente_id']??'')!==''?(int)$_POST['segnalato_da_utente_id']:null;
         $dataOfferta=normalizeDateForDb($_POST['data_offerta']??'') ?? ''; $validitaGiorniInput=trim($_POST['validita_giorni']??''); $dataScadenza=normalizeDateForDb($_POST['data_scadenza']??'') ?? '';
         $note=trim($_POST['note']??''); $promotoreAziendaId=($_POST['promotore_azienda_id']??'')!==''?(int)$_POST['promotore_azienda_id']:null;
@@ -580,7 +646,7 @@ renderHeader('Simplex - Offerte');
 <div class="col-md-4"><label class="form-label">Status Offerta</label><select class="form-select" name="stato" id="stato_offerta" required><?php foreach($STATI_OFFERTA as $st): ?><option value="<?= $st ?>" <?= (($formData['stato']??'In Elaborazione')===$st)?'selected':'' ?>><?= $st ?></option><?php endforeach; ?></select></div>
 <div class="col-md-6" id="box-consulente"><label class="form-label">Consulente incaricato (per Aggiudicata)</label><select class="form-select" name="consulente_incaricato" id="consulente_incaricato"><option value="">-- Seleziona --</option><?php foreach($CONSULENTI as $cons): ?><option value="<?= htmlspecialchars($cons) ?>" <?= (($formData['consulente_incaricato']??'')===$cons)?'selected':'' ?>><?= htmlspecialchars($cons) ?></option><?php endforeach; ?></select></div>
 <div class="col-12"><label class="form-label">Specifiche Oggetto</label><textarea class="form-control" name="specifiche_oggetto" rows="2"><?= htmlspecialchars($formData['specifiche_oggetto']??'') ?></textarea></div>
-<div class="col-md-6"><label class="form-label">Sede di erogazione del servizio</label><input class="form-control" name="sede_erogazione_servizio" value="<?= htmlspecialchars($formData['sede_erogazione_servizio']??'') ?>"></div>
+<div class="col-md-6"><label class="form-label">Sede di erogazione del servizio</label><textarea class="form-control" name="sede_erogazione_servizio" id="sede_erogazione_servizio" rows="3"><?= htmlspecialchars($formData['sede_erogazione_servizio']??'') ?></textarea></div>
 <div class="col-md-6"><label class="form-label">Azienda *</label><select class="form-select" name="azienda_id" id="azienda_id"><option value="">-- Seleziona --</option><?php foreach($aziendeTutte as $az): ?><option value="<?= (int)$az['id'] ?>" <?= ((int)($formData['azienda_id']??0)===(int)$az['id'])?'selected':'' ?>><?= htmlspecialchars($az['ragione_sociale']) ?></option><?php endforeach; ?></select></div>
 <div class="col-md-6 d-flex align-items-end"><button type="button" class="btn btn-outline-primary" data-bs-toggle="modal" data-bs-target="#modalNuovaAzienda">+ Nuova Azienda</button></div>
 <div class="col-md-3"><label class="form-label">RCO *</label><select class="form-select" name="rco_utente_id" required><option value="">-- Seleziona --</option><?php foreach($utenti as $u): ?><option value="<?= (int)$u['id'] ?>" <?= ((int)($formData['rco_utente_id']??0)===(int)$u['id'])?'selected':'' ?>><?= htmlspecialchars($u['nome'].' '.$u['cognome']) ?></option><?php endforeach; ?></select></div>
@@ -722,6 +788,20 @@ const statoSel=document.getElementById('stato_offerta'); const consulBox=documen
 function toggleCons(){ if(!statoSel||!consulBox||!consSel) return; const on=statoSel.value==='Aggiudicata'; consulBox.style.display=on?'block':'none'; consSel.required=on; if(!on) consSel.value=''; }
 if(statoSel){statoSel.addEventListener('change',toggleCons); toggleCons();}
 const aziendaSel=document.getElementById('azienda_id');
+const sedeErogazioneInput=document.getElementById('sede_erogazione_servizio');
+async function valorizzaSediAzienda(){
+    if(!aziendaSel||!sedeErogazioneInput) return;
+    const aziendaId=aziendaSel.value;
+    if(!aziendaId){ sedeErogazioneInput.value=''; return; }
+    try{
+        const resp=await fetch(`offerte.php?ajax=azienda_sedi&id=${encodeURIComponent(aziendaId)}`, {headers:{'Accept':'application/json','X-Requested-With':'XMLHttpRequest'}});
+        const data=await resp.json();
+        if(resp.ok&&data&&data.ok){ sedeErogazioneInput.value=data.sedi||''; }
+    }catch(error){
+        // In caso di errore lasciamo invariato il valore eventualmente inserito a mano.
+    }
+}
+if(aziendaSel){aziendaSel.addEventListener('change',valorizzaSediAzienda);}
 const formNuovaAzienda=document.getElementById('formNuovaAzienda');
 const nuovaAziendaError=document.getElementById('nuovaAziendaError');
 
@@ -803,6 +883,7 @@ if(formNuovaAzienda&&aziendaSel){
             opt.textContent=data.ragione_sociale;
             opt.selected=true;
             aziendaSel.appendChild(opt);
+            await valorizzaSediAzienda();
             formNuovaAzienda.reset();
             const modalEl=document.getElementById('modalNuovaAzienda');
             const modal=bootstrap.Modal.getInstance(modalEl);
