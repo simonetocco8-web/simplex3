@@ -31,7 +31,7 @@ foreach ($filters as $field) {
         $params[':f_fattura_numero'] = '%' . $value . '%';
     } elseif ($field === 'data_pagamento') {
         $where[] = 'p.data_pagamento = :f_data_pagamento';
-        $params[':f_data_pagamento'] = $value;
+        $params[':f_data_pagamento'] = normalizeDateForDb($value);
     } elseif ($field === 'modalita_pagamento') {
         $where[] = 'p.modalita_pagamento = :f_modalita_pagamento';
         $params[':f_modalita_pagamento'] = $value;
@@ -104,7 +104,7 @@ renderHeader('Simplex - Pagamenti');
                 <div class="card-body">
                     <form method="get" class="row g-2">
                         <div class="col-md-4"><input class="form-control" name="f_fattura_numero" placeholder="Numero fattura" value="<?= htmlspecialchars($_GET['f_fattura_numero'] ?? '') ?>"></div>
-                        <div class="col-md-3"><input type="date" class="form-control" name="f_data_pagamento" value="<?= htmlspecialchars($_GET['f_data_pagamento'] ?? '') ?>"></div>
+                        <div class="col-md-3"><input class="form-control" name="f_data_pagamento" placeholder="gg/mm/aaaa" value="<?= htmlspecialchars($_GET['f_data_pagamento'] ?? '') ?>"></div>
                         <div class="col-md-3">
                             <select class="form-select" name="f_modalita_pagamento">
                                 <option value="">Modalità pagamento</option>
@@ -134,9 +134,9 @@ renderHeader('Simplex - Pagamenti');
                                 <td><a href="fatture.php?view=<?= (int)$pagamento['fattura_id'] ?>"><?= htmlspecialchars($pagamento['fattura_numero']) ?></a></td>
                                 <td><?= htmlspecialchars($pagamento['commessa_protocollo'] ?? '-') ?></td>
                                 <td>€ <?= number_format((float)$pagamento['fattura_importo'], 2, ',', '.') ?></td>
-                                <td><?= htmlspecialchars($pagamento['data_pagamento']) ?></td>
+                                <td><?= htmlspecialchars(formatDateIt($pagamento['data_pagamento'] ?? null)) ?></td>
                                 <td><?= htmlspecialchars($pagamento['modalita_pagamento']) ?></td>
-                                <td><?= htmlspecialchars($pagamento['creato_il']) ?></td>
+                                <td><?= htmlspecialchars(formatDateIt($pagamento['creato_il'] ?? null)) ?></td>
                             </tr>
                         <?php endforeach; ?>
                         </tbody>
