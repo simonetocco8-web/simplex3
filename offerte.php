@@ -95,10 +95,10 @@ function creaAziendaRapida(PDO $pdo, array $input): array
     return ['ok' => true, 'id' => (int)$pdo->lastInsertId(), 'ragione_sociale' => mb_substr($ragioneSociale, 0, 30)];
 }
 
-function sediAziendaTesto(PDO $pdo, int $aziendaId): string
+function sediAziendaOpzioni(PDO $pdo, int $aziendaId): array
 {
     if ($aziendaId <= 0) {
-        return '';
+        return [];
     }
 
     if ((bool) $pdo->query("SHOW TABLES LIKE 'aziende_sedi'")->fetchColumn()) {
@@ -109,7 +109,7 @@ function sediAziendaTesto(PDO $pdo, int $aziendaId): string
              ORDER BY FIELD(tipo_sede, "Legale", "Amministrativa", "Operativa"), id'
         );
         $stmtSedi->execute([':azienda_id' => $aziendaId]);
-        $righe = [];
+        $opzioni = [];
         foreach ($stmtSedi->fetchAll() as $sede) {
             $indirizzo = trim((string)($sede['via'] ?? '') . ' ' . (string)($sede['numero_civico'] ?? ''));
             $localita = trim((string)($sede['cap'] ?? '') . ' ' . (string)($sede['comune'] ?? ''));
@@ -121,22 +121,23 @@ function sediAziendaTesto(PDO $pdo, int $aziendaId): string
             $parti = array_filter([$indirizzo, $localita, $regione], static fn($parte) => $parte !== '');
             if ($parti) {
                 $tipo = trim((string)($sede['tipo_sede'] ?? ''));
-                $righe[] = ($tipo !== '' ? $tipo . ': ' : '') . implode(', ', $parti);
+                $testo = ($tipo !== '' ? $tipo . ': ' : '') . implode(', ', $parti);
+                $opzioni[] = ['value' => $testo, 'label' => $testo];
             }
         }
-        if ($righe) {
-            return implode("\n", $righe);
+        if ($opzioni) {
+            return $opzioni;
         }
     }
 
     if (!(bool) $pdo->query("SHOW TABLES LIKE 'aziende'")->fetchColumn()) {
-        return '';
+        return [];
     }
     $stmtAzienda = $pdo->prepare('SELECT via, numero_civico, cap, regione, provincia, comune, localita FROM aziende WHERE id = :id');
     $stmtAzienda->execute([':id' => $aziendaId]);
     $azienda = $stmtAzienda->fetch();
     if (!$azienda) {
-        return '';
+        return [];
     }
     $indirizzo = trim((string)($azienda['via'] ?? '') . ' ' . (string)($azienda['numero_civico'] ?? ''));
     $comune = trim((string)($azienda['comune'] ?? ($azienda['localita'] ?? '')));
@@ -146,8 +147,16 @@ function sediAziendaTesto(PDO $pdo, int $aziendaId): string
         $localita = trim($localita . ' (' . $provincia . ')');
     }
     $regione = trim((string)($azienda['regione'] ?? ''));
+    $testo = implode(', ', array_filter([$indirizzo, $localita, $regione], static fn($parte) => $parte !== ''));
 
-    return implode(', ', array_filter([$indirizzo, $localita, $regione], static fn($parte) => $parte !== ''));
+    return $testo !== '' ? [['value' => $testo, 'label' => $testo]] : [];
+}
+
+function sediAziendaTesto(PDO $pdo, int $aziendaId): string
+{
+    $opzioni = sediAziendaOpzioni($pdo, $aziendaId);
+
+    return $opzioni[0]['value'] ?? '';
 }
 
 function ensureCommessa(PDO $pdo, int $offertaId, string $consulente): ?string
@@ -331,7 +340,7 @@ if ((bool)$pdo->query("SHOW TABLES LIKE 'aziende'")->fetchColumn()) {
 if (($_GET['ajax'] ?? '') === 'azienda_sedi') {
     header('Content-Type: application/json; charset=utf-8');
     $aziendaId = (int)($_GET['id'] ?? 0);
-    echo json_encode(['ok' => true, 'sedi' => sediAziendaTesto($pdo, $aziendaId)], JSON_UNESCAPED_UNICODE);
+    echo json_encode(['ok' => true, 'sedi' => sediAziendaOpzioni($pdo, $aziendaId)], JSON_UNESCAPED_UNICODE);
     exit;
 }
 
@@ -646,8 +655,8 @@ renderHeader('Simplex - Offerte');
 <div class="col-md-4"><label class="form-label">Status Offerta</label><select class="form-select" name="stato" id="stato_offerta" required><?php foreach($STATI_OFFERTA as $st): ?><option value="<?= $st ?>" <?= (($formData['stato']??'In Elaborazione')===$st)?'selected':'' ?>><?= $st ?></option><?php endforeach; ?></select></div>
 <div class="col-md-6" id="box-consulente"><label class="form-label">Consulente incaricato (per Aggiudicata)</label><select class="form-select" name="consulente_incaricato" id="consulente_incaricato"><option value="">-- Seleziona --</option><?php foreach($CONSULENTI as $cons): ?><option value="<?= htmlspecialchars($cons) ?>" <?= (($formData['consulente_incaricato']??'')===$cons)?'selected':'' ?>><?= htmlspecialchars($cons) ?></option><?php endforeach; ?></select></div>
 <div class="col-12"><label class="form-label">Specifiche Oggetto</label><textarea class="form-control" name="specifiche_oggetto" rows="2"><?= htmlspecialchars($formData['specifiche_oggetto']??'') ?></textarea></div>
-<div class="col-md-6"><label class="form-label">Sede di erogazione del servizio</label><textarea class="form-control" name="sede_erogazione_servizio" id="sede_erogazione_servizio" rows="3"><?= htmlspecialchars($formData['sede_erogazione_servizio']??'') ?></textarea></div>
 <div class="col-md-6"><label class="form-label">Azienda *</label><select class="form-select" name="azienda_id" id="azienda_id"><option value="">-- Seleziona --</option><?php foreach($aziendeTutte as $az): ?><option value="<?= (int)$az['id'] ?>" <?= ((int)($formData['azienda_id']??0)===(int)$az['id'])?'selected':'' ?>><?= htmlspecialchars($az['ragione_sociale']) ?></option><?php endforeach; ?></select></div>
+<div class="col-md-6"><label class="form-label">Sede di erogazione del servizio</label><select class="form-select" name="sede_erogazione_servizio" id="sede_erogazione_servizio" data-selected="<?= htmlspecialchars($formData['sede_erogazione_servizio']??'') ?>"><option value=""><?= ((int)($formData['azienda_id']??0)>0) ? '-- Seleziona una sede --' : '-- Seleziona prima l\'azienda --' ?></option><?php if (!empty($formData['sede_erogazione_servizio'])): ?><option value="<?= htmlspecialchars($formData['sede_erogazione_servizio']) ?>" selected><?= htmlspecialchars($formData['sede_erogazione_servizio']) ?></option><?php endif; ?></select></div>
 <div class="col-md-6 d-flex align-items-end"><button type="button" class="btn btn-outline-primary" data-bs-toggle="modal" data-bs-target="#modalNuovaAzienda">+ Nuova Azienda</button></div>
 <div class="col-md-3"><label class="form-label">RCO *</label><select class="form-select" name="rco_utente_id" required><option value="">-- Seleziona --</option><?php foreach($utenti as $u): ?><option value="<?= (int)$u['id'] ?>" <?= ((int)($formData['rco_utente_id']??0)===(int)$u['id'])?'selected':'' ?>><?= htmlspecialchars($u['nome'].' '.$u['cognome']) ?></option><?php endforeach; ?></select></div>
 <div class="col-md-3"><label class="form-label">Segnalato da</label><select class="form-select" name="segnalato_da_utente_id"><option value="">-- Seleziona --</option><?php foreach($utenti as $u): ?><option value="<?= (int)$u['id'] ?>" <?= ((int)($formData['segnalato_da_utente_id']??0)===(int)$u['id'])?'selected':'' ?>><?= htmlspecialchars($u['nome'].' '.$u['cognome']) ?></option><?php endforeach; ?></select></div>
@@ -789,19 +798,37 @@ function toggleCons(){ if(!statoSel||!consulBox||!consSel) return; const on=stat
 if(statoSel){statoSel.addEventListener('change',toggleCons); toggleCons();}
 const aziendaSel=document.getElementById('azienda_id');
 const sedeErogazioneInput=document.getElementById('sede_erogazione_servizio');
+function resetSediErogazione(placeholder){
+    if(!sedeErogazioneInput) return;
+    sedeErogazioneInput.innerHTML='';
+    const opt=document.createElement('option');
+    opt.value='';
+    opt.textContent=placeholder;
+    sedeErogazioneInput.appendChild(opt);
+}
 async function valorizzaSediAzienda(){
     if(!aziendaSel||!sedeErogazioneInput) return;
     const aziendaId=aziendaSel.value;
-    if(!aziendaId){ sedeErogazioneInput.value=''; return; }
+    const selected=sedeErogazioneInput.dataset.selected||sedeErogazioneInput.value||'';
+    if(!aziendaId){ resetSediErogazione('-- Seleziona prima l\'azienda --'); return; }
     try{
         const resp=await fetch(`offerte.php?ajax=azienda_sedi&id=${encodeURIComponent(aziendaId)}`, {headers:{'Accept':'application/json','X-Requested-With':'XMLHttpRequest'}});
         const data=await resp.json();
-        if(resp.ok&&data&&data.ok){ sedeErogazioneInput.value=data.sedi||''; }
+        resetSediErogazione('-- Seleziona una sede --');
+        const sedi=(resp.ok&&data&&data.ok&&Array.isArray(data.sedi))?data.sedi:[];
+        sedi.forEach((sede)=>{
+            const opt=document.createElement('option');
+            opt.value=sede.value||'';
+            opt.textContent=sede.label||sede.value||'';
+            if(opt.value===selected) opt.selected=true;
+            sedeErogazioneInput.appendChild(opt);
+        });
+        sedeErogazioneInput.dataset.selected='';
     }catch(error){
-        // In caso di errore lasciamo invariato il valore eventualmente inserito a mano.
+        resetSediErogazione('Errore caricamento sedi');
     }
 }
-if(aziendaSel){aziendaSel.addEventListener('change',valorizzaSediAzienda);}
+if(aziendaSel){aziendaSel.addEventListener('change',valorizzaSediAzienda); if(aziendaSel.value) valorizzaSediAzienda();}
 const formNuovaAzienda=document.getElementById('formNuovaAzienda');
 const nuovaAziendaError=document.getElementById('nuovaAziendaError');
 
