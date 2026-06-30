@@ -588,7 +588,7 @@ renderHeader('Simplex - Commesse');
                         <?php if (!$commesse): ?><tr><td colspan="9" class="text-center text-muted py-4">Nessuna commessa trovata.</td></tr><?php endif; ?>
                         <?php foreach ($commesse as $commessa): ?>
                             <tr>
-                                <td><?= htmlspecialchars($commessa['protocollo']) ?></td>
+                                <td><a href="commesse.php?edit=<?= (int)$commessa['id'] ?>"><?= htmlspecialchars($commessa['protocollo']) ?></a></td>
                                 <td><?= htmlspecialchars($commessa['consulente_nome']) ?></td>
                                 <td><?php if (!empty($commessa['offerta_id'])): ?><a href="offerte.php?view=<?= (int)$commessa['offerta_id'] ?>"><?= htmlspecialchars($commessa['offerta_protocollo'] ?? '-') ?></a><?php else: ?>-<?php endif; ?></td>
                                 <td><?= htmlspecialchars(formatDateIt($commessa['data_rali'] ?? null)) ?></td>
