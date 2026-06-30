@@ -385,7 +385,7 @@ foreach ($filters as $field) {
     }
 }
 
-$sql = 'SELECT c.*, o.protocollo AS offerta_protocollo, o.servizio AS offerta_servizio, o.stato AS offerta_stato,
+$sql = 'SELECT c.*, o.protocollo AS offerta_protocollo, o.servizio AS offerta_servizio, o.dettaglio_servizio AS offerta_dettaglio_servizio, o.stato AS offerta_stato,
                CONCAT(u.nome, " ", u.cognome) AS dtg_nome, a.ragione_sociale AS azienda_cliente_nome
         FROM commesse c
         LEFT JOIN offerte o ON o.id = c.offerta_id
@@ -581,21 +581,21 @@ renderHeader('Simplex - Commesse');
                     <table class="table table-striped table-hover mb-0 align-middle">
                         <thead class="table-light">
                         <tr>
-                            <th>Protocollo Commessa</th><th>Anno</th><th>Consulente</th><th>Protocollo Offerta</th><th>Data R.A.L.I</th><th>DTG</th><th>Budget (€)</th><th>Ragione Sociale Cliente</th><th>Azioni</th>
+                            <th>Prot.</th><th>Consulente</th><th>Protocollo Offerta</th><th>Data R.A.L.I</th><th>DTG</th><th>Budget (€)</th><th>Cliente</th><th>Servizio</th><th>Azioni</th>
                         </tr>
                         </thead>
                         <tbody>
                         <?php if (!$commesse): ?><tr><td colspan="9" class="text-center text-muted py-4">Nessuna commessa trovata.</td></tr><?php endif; ?>
                         <?php foreach ($commesse as $commessa): ?>
                             <tr>
-                                <td><?= htmlspecialchars($commessa['protocollo']) ?></td>
-                                <td><?= htmlspecialchars((string)$commessa['anno_riferimento']) ?></td>
+                                <td><a href="commesse.php?edit=<?= (int)$commessa['id'] ?>"><?= htmlspecialchars($commessa['protocollo']) ?></a></td>
                                 <td><?= htmlspecialchars($commessa['consulente_nome']) ?></td>
                                 <td><?php if (!empty($commessa['offerta_id'])): ?><a href="offerte.php?view=<?= (int)$commessa['offerta_id'] ?>"><?= htmlspecialchars($commessa['offerta_protocollo'] ?? '-') ?></a><?php else: ?>-<?php endif; ?></td>
                                 <td><?= htmlspecialchars(formatDateIt($commessa['data_rali'] ?? null)) ?></td>
                                 <td><?= htmlspecialchars($commessa['dtg_nome'] ?? '-') ?></td>
                                 <td><?= htmlspecialchars((string)($commessa['budget'] ?? '-')) ?></td>
                                 <td><?= htmlspecialchars($commessa['azienda_cliente_nome'] ?? '-') ?></td>
+                                <td><?= htmlspecialchars($commessa['offerta_dettaglio_servizio'] ?? '-') ?></td>
                                 <td><a class="btn btn-sm btn-outline-primary" href="commesse.php?edit=<?= (int)$commessa['id'] ?>">Modifica</a></td>
                             </tr>
                         <?php endforeach; ?>

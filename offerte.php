@@ -696,7 +696,7 @@ renderHeader('Simplex - Offerte');
     </div>
     <button type="button" class="btn btn-sm btn-outline-primary mt-3" id="btn-aggiungi-momento-offerta">+ Aggiungi momento</button>
 </div>
-<div class="col-12 d-flex gap-2"><button class="btn btn-primary" type="submit">Salva Offerta</button><a class="btn btn-outline-secondary" href="offerte.php">Annulla</a></div>
+<div class="col-12 d-flex gap-2"><button class="btn btn-primary" type="submit">Salva</button><a class="btn btn-outline-secondary" href="offerte.php">Annulla</a></div>
 </form></div></div>
 <?php endif; ?>
 
