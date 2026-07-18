@@ -348,7 +348,7 @@ $action=$_GET['action']??'list'; $viewId=(int)($_GET['view']??0); $editId=(int)(
 $offertaInModifica=null; $offertaInVisualizzazione=null;
 $filesOfferta = [];
 if($viewId>0){
-    $st=$pdo->prepare('SELECT o.*, c.id AS commessa_id, c.protocollo AS commessa_protocollo, c.consulente_nome AS commessa_consulente FROM offerte o LEFT JOIN commesse c ON c.offerta_id=o.id WHERE o.id=:id');
+    $st=$pdo->prepare('SELECT o.*, a.ragione_sociale AS azienda_nome, c.id AS commessa_id, c.protocollo AS commessa_protocollo, c.consulente_nome AS commessa_consulente FROM offerte o LEFT JOIN aziende a ON a.id=o.azienda_id LEFT JOIN commesse c ON c.offerta_id=o.id WHERE o.id=:id');
     $st->execute([':id'=>$viewId]);
     $offertaInVisualizzazione=$st->fetch();
     if ($offertaInVisualizzazione) {
@@ -420,7 +420,7 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
                             ]);
                         $success = 'File caricato correttamente.';
                         $viewId = $idOfferta;
-                        $st = $pdo->prepare('SELECT o.*, c.id AS commessa_id, c.protocollo AS commessa_protocollo, c.consulente_nome AS commessa_consulente FROM offerte o LEFT JOIN commesse c ON c.offerta_id=o.id WHERE o.id=:id');
+                        $st = $pdo->prepare('SELECT o.*, a.ragione_sociale AS azienda_nome, c.id AS commessa_id, c.protocollo AS commessa_protocollo, c.consulente_nome AS commessa_consulente FROM offerte o LEFT JOIN aziende a ON a.id=o.azienda_id LEFT JOIN commesse c ON c.offerta_id=o.id WHERE o.id=:id');
                         $st->execute([':id' => $viewId]);
                         $offertaInVisualizzazione = $st->fetch();
                         $stmtFiles = $pdo->prepare('SELECT * FROM offerte_file WHERE offerta_id = :offerta_id ORDER BY caricato_il DESC');
@@ -611,6 +611,16 @@ renderHeader('Simplex - Offerte');
             <div class="col-md-3">
                 <div class="text-muted small text-uppercase">Protocollo</div>
                 <div class="fw-semibold fs-5"><?= htmlspecialchars($offertaInVisualizzazione['protocollo'] ?? '-') ?></div>
+            </div>
+            <div class="col-md-3">
+                <div class="text-muted small text-uppercase">Ragione Sociale Azienda</div>
+                <div>
+                    <?php if (!empty($offertaInVisualizzazione['azienda_id'])): ?>
+                        <a href="aziende.php?view=<?= (int)$offertaInVisualizzazione['azienda_id'] ?>"><?= htmlspecialchars($offertaInVisualizzazione['azienda_nome'] ?? '-') ?></a>
+                    <?php else: ?>
+                        -
+                    <?php endif; ?>
+                </div>
             </div>
             <div class="col-md-3">
                 <div class="text-muted small text-uppercase">Servizio</div>
