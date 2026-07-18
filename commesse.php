@@ -116,16 +116,6 @@ if (!(bool)$pdo->query("SHOW COLUMNS FROM offerta_momenti_lavorazione LIKE 'cost
     $pdo->exec("ALTER TABLE offerta_momenti_lavorazione ADD COLUMN costo_totale DECIMAL(12,2) NOT NULL DEFAULT 0 AFTER valore_giornaliero_uomo");
 }
 
-$utenti = $pdo->query('SELECT id, nome, cognome FROM utenti ORDER BY nome, cognome')->fetchAll();
-$aziende = [];
-if ((bool) $pdo->query("SHOW TABLES LIKE 'aziende'")->fetchColumn()) {
-    $aziende = $pdo->query('SELECT id, ragione_sociale FROM aziende ORDER BY ragione_sociale')->fetchAll();
-}
-$entiCertificazione = [];
-if ((bool) $pdo->query("SHOW TABLES LIKE 'enti_certificazione'")->fetchColumn()) {
-    $entiCertificazione = $pdo->query('SELECT id, denominazione FROM enti_certificazione ORDER BY denominazione')->fetchAll();
-}
-
 $errors = [];
 $success = null;
 $editId = isset($_GET['edit']) ? (int) $_GET['edit'] : 0;
@@ -153,69 +143,6 @@ if ($editId > 0) {
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $azione = $_POST['azione'] ?? '';
-
-    if ($azione === 'save') {
-        $id = (int) ($_POST['id'] ?? 0);
-        $dataRali = normalizeDateForDb($_POST['data_rali'] ?? '') ?? '';
-        $dtgUtenteId = ($_POST['dtg_utente_id'] ?? '') !== '' ? (int) $_POST['dtg_utente_id'] : null;
-        $budgetRaw = str_replace(',', '.', trim($_POST['budget'] ?? ''));
-        $enteCertificazioneId = ($_POST['ente_certificazione_id'] ?? '') !== '' ? (int) $_POST['ente_certificazione_id'] : null;
-        $importoEnteRaw = str_replace(',', '.', trim($_POST['importo_ente_certificazione'] ?? ''));
-        $aziendaClienteId = ($_POST['azienda_cliente_id'] ?? '') !== '' ? (int) $_POST['azienda_cliente_id'] : null;
-        $offertaServizio = '';
-
-        if ($id > 0) {
-            $stmtServizio = $pdo->prepare('SELECT o.servizio FROM commesse c LEFT JOIN offerte o ON o.id = c.offerta_id WHERE c.id = :id');
-            $stmtServizio->execute([':id' => $id]);
-            $offertaServizio = (string) ($stmtServizio->fetchColumn() ?: '');
-        }
-        $isSistemiGestioneAziendale = $offertaServizio === 'SISTEMI DI GESTIONE AZIENDALE';
-
-        if ($id <= 0) {
-            $errors[] = 'ID commessa non valido.';
-        }
-        if ($dataRali !== '' && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $dataRali)) {
-            $errors[] = 'Data R.A.L.I non valida.';
-        }
-        if ($budgetRaw !== '' && (!is_numeric($budgetRaw) || (float) $budgetRaw < 0)) {
-            $errors[] = 'Budget non valido.';
-        }
-        if ($isSistemiGestioneAziendale && $enteCertificazioneId === null) {
-            $errors[] = 'Per commesse da offerta "SISTEMI DI GESTIONE AZIENDALE" è obbligatorio selezionare l\'Ente di Certificazione.';
-        }
-        if ($isSistemiGestioneAziendale && ($importoEnteRaw === '' || !is_numeric($importoEnteRaw) || (float) $importoEnteRaw < 0)) {
-            $errors[] = 'Per commesse da offerta "SISTEMI DI GESTIONE AZIENDALE" l\'Importo dell\'Ente di Certificazione è obbligatorio e deve essere valido.';
-        }
-        if (!$isSistemiGestioneAziendale) {
-            $enteCertificazioneId = null;
-            $importoEnteRaw = '';
-        }
-
-        if (!$errors) {
-            $stmtSave = $pdo->prepare(
-                'UPDATE commesse
-                 SET data_rali = :data_rali,
-                     dtg_utente_id = :dtg_utente_id,
-                     budget = :budget,
-                     ente_certificazione_id = :ente_certificazione_id,
-                     importo_ente_certificazione = :importo_ente_certificazione,
-                     azienda_cliente_id = :azienda_cliente_id
-                 WHERE id = :id'
-            );
-            $stmtSave->execute([
-                ':data_rali' => $dataRali !== '' ? $dataRali : null,
-                ':dtg_utente_id' => $dtgUtenteId,
-                ':budget' => $budgetRaw !== '' ? number_format((float) $budgetRaw, 2, '.', '') : null,
-                ':ente_certificazione_id' => $enteCertificazioneId,
-                ':importo_ente_certificazione' => $importoEnteRaw !== '' ? number_format((float) $importoEnteRaw, 2, '.', '') : null,
-                ':azienda_cliente_id' => $aziendaClienteId,
-                ':id' => $id,
-            ]);
-
-            $success = 'Commessa aggiornata correttamente.';
-            $editId = $id;
-        }
-    }
 
     if ($azione === 'upload_file') {
         $id = (int) ($_POST['id'] ?? 0);
@@ -357,9 +284,12 @@ if ($editId > 0) {
     }
 }
 
-$filters = ['protocollo', 'anno_riferimento', 'consulente_nome', 'offerta_protocollo', 'offerta_servizio', 'offerta_stato'];
-$where = [];
-$params = [];
+$utenteLoggato = currentUser();
+$consulenteCorrente = trim((string) ($utenteLoggato['nome_completo'] ?? ''));
+
+$filters = ['protocollo', 'anno_riferimento', 'offerta_protocollo', 'offerta_servizio', 'offerta_stato'];
+$where = ['c.consulente_nome = :consulente_corrente'];
+$params = [':consulente_corrente' => $consulenteCorrente];
 foreach ($filters as $field) {
     $key = 'f_' . $field;
     $value = trim((string) ($_GET[$key] ?? ''));
@@ -400,7 +330,6 @@ $stmt = $pdo->prepare($sql);
 $stmt->execute($params);
 $commesse = $stmt->fetchAll();
 
-$utenteLoggato = currentUser();
 renderHeader('Simplex - Commesse');
 ?>
 <div class="container-fluid">
@@ -455,29 +384,6 @@ renderHeader('Simplex - Commesse');
             <?php foreach ($errors as $error): ?><div class="alert alert-danger"><?= htmlspecialchars($error) ?></div><?php endforeach; ?>
 
             <?php if ($commessaInModifica): ?>
-                <div class="card mb-4">
-                    <div class="card-header d-flex justify-content-between align-items-center">
-                        <span>Modifica Commessa <?= htmlspecialchars($commessaInModifica['protocollo']) ?></span>
-                        <span class="badge text-bg-secondary">Momenti importati da Offerta</span>
-                    </div>
-                    <div class="card-body">
-                        <form method="post" class="row g-3">
-                            <input type="hidden" name="azione" value="save">
-                            <input type="hidden" name="id" value="<?= (int)$commessaInModifica['id'] ?>">
-
-                            <div class="col-md-3"><label class="form-label">Data R.A.L.I</label><input class="form-control" name="data_rali" placeholder="gg/mm/aaaa" value="<?= htmlspecialchars(formatDateInputIt($commessaInModifica['data_rali'] ?? '')) ?>"></div>
-                            <div class="col-md-3"><label class="form-label">DTG</label><select class="form-select" name="dtg_utente_id"><option value="">-- Seleziona --</option><?php foreach ($utenti as $utente): ?><option value="<?= (int)$utente['id'] ?>" <?= ((int)($commessaInModifica['dtg_utente_id'] ?? 0) === (int)$utente['id']) ? 'selected' : '' ?>><?= htmlspecialchars($utente['nome'] . ' ' . $utente['cognome']) ?></option><?php endforeach; ?></select></div>
-                            <div class="col-md-3"><label class="form-label">Budget (€)</label><input type="number" min="0" step="0.01" class="form-control" name="budget" value="<?= htmlspecialchars((string)($commessaInModifica['budget'] ?? '')) ?>"></div>
-                            <div class="col-md-3"><label class="form-label">Ragione Sociale Cliente</label><select class="form-select" name="azienda_cliente_id"><option value="">-- Seleziona --</option><?php foreach ($aziende as $azienda): ?><option value="<?= (int)$azienda['id'] ?>" <?= ((int)($commessaInModifica['azienda_cliente_id'] ?? 0) === (int)$azienda['id']) ? 'selected' : '' ?>><?= htmlspecialchars($azienda['ragione_sociale']) ?></option><?php endforeach; ?></select></div>
-                            <?php if (($commessaInModifica['offerta_servizio'] ?? '') === 'SISTEMI DI GESTIONE AZIENDALE'): ?>
-                                <div class="col-md-6"><label class="form-label">Ente di Certificazione</label><select class="form-select" name="ente_certificazione_id"><option value="">-- Seleziona --</option><?php foreach ($entiCertificazione as $ente): ?><option value="<?= (int)$ente['id'] ?>" <?= ((int)($commessaInModifica['ente_certificazione_id'] ?? 0) === (int)$ente['id']) ? 'selected' : '' ?>><?= htmlspecialchars($ente['denominazione']) ?></option><?php endforeach; ?></select></div>
-                                <div class="col-md-6"><label class="form-label">Importo dell'Ente di Certificazione (€)</label><input type="number" min="0" step="0.01" class="form-control" name="importo_ente_certificazione" value="<?= htmlspecialchars((string)($commessaInModifica['importo_ente_certificazione'] ?? '')) ?>"></div>
-                            <?php endif; ?>
-
-                            <div class="col-12 d-flex gap-2"><button class="btn btn-primary" type="submit">Salva modifica</button><a class="btn btn-outline-secondary" href="commesse.php">Annulla</a></div>
-                        </form>
-                    </div>
-                </div>
 
                 <div class="card mb-4">
                     <div class="card-header">Momenti di Lavorazione</div>
@@ -566,7 +472,6 @@ renderHeader('Simplex - Commesse');
                     <form method="get" class="row g-2">
                         <div class="col-md-2"><input class="form-control" name="f_protocollo" placeholder="Protocollo commessa" value="<?= htmlspecialchars($_GET['f_protocollo'] ?? '') ?>"></div>
                         <div class="col-md-2"><input class="form-control" name="f_anno_riferimento" placeholder="Anno" value="<?= htmlspecialchars($_GET['f_anno_riferimento'] ?? '') ?>"></div>
-                        <div class="col-md-3"><input class="form-control" name="f_consulente_nome" placeholder="Consulente" value="<?= htmlspecialchars($_GET['f_consulente_nome'] ?? '') ?>"></div>
                         <div class="col-md-2"><input class="form-control" name="f_offerta_protocollo" placeholder="Prot. Offerta" value="<?= htmlspecialchars($_GET['f_offerta_protocollo'] ?? '') ?>"></div>
                         <div class="col-md-2"><input class="form-control" name="f_offerta_servizio" placeholder="Servizio offerta" value="<?= htmlspecialchars($_GET['f_offerta_servizio'] ?? '') ?>"></div>
                         <div class="col-md-1"><input class="form-control" name="f_offerta_stato" placeholder="Stato" value="<?= htmlspecialchars($_GET['f_offerta_stato'] ?? '') ?>"></div>
@@ -581,7 +486,7 @@ renderHeader('Simplex - Commesse');
                     <table class="table table-striped table-hover mb-0 align-middle">
                         <thead class="table-light">
                         <tr>
-                            <th>Prot.</th><th>Consulente</th><th>Protocollo Offerta</th><th>Data R.A.L.I</th><th>DTG</th><th>Budget (€)</th><th>Cliente</th><th>Servizio</th><th>Azioni</th>
+                            <th>Prot.</th><th>Consulente</th><th>Protocollo Offerta</th><th>Data R.A.L.I</th><th>DTG</th><th>Budget (€)</th><th>Cliente</th><th>Servizio</th><th>Dettaglio</th>
                         </tr>
                         </thead>
                         <tbody>
@@ -596,7 +501,7 @@ renderHeader('Simplex - Commesse');
                                 <td><?= htmlspecialchars((string)($commessa['budget'] ?? '-')) ?></td>
                                 <td><?= htmlspecialchars($commessa['azienda_cliente_nome'] ?? '-') ?></td>
                                 <td><?= htmlspecialchars($commessa['offerta_dettaglio_servizio'] ?? '-') ?></td>
-                                <td><a class="btn btn-sm btn-outline-primary" href="commesse.php?edit=<?= (int)$commessa['id'] ?>">Modifica</a></td>
+                                <td><a class="btn btn-sm btn-outline-primary" href="commesse.php?edit=<?= (int)$commessa['id'] ?>">Dettaglio</a></td>
                             </tr>
                         <?php endforeach; ?>
                         </tbody>
