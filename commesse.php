@@ -284,9 +284,12 @@ if ($editId > 0) {
     }
 }
 
-$filters = ['protocollo', 'anno_riferimento', 'consulente_nome', 'offerta_protocollo', 'offerta_servizio', 'offerta_stato'];
-$where = [];
-$params = [];
+$utenteLoggato = currentUser();
+$consulenteCorrente = trim((string) ($utenteLoggato['nome_completo'] ?? ''));
+
+$filters = ['protocollo', 'anno_riferimento', 'offerta_protocollo', 'offerta_servizio', 'offerta_stato'];
+$where = ['c.consulente_nome = :consulente_corrente'];
+$params = [':consulente_corrente' => $consulenteCorrente];
 foreach ($filters as $field) {
     $key = 'f_' . $field;
     $value = trim((string) ($_GET[$key] ?? ''));
@@ -327,7 +330,6 @@ $stmt = $pdo->prepare($sql);
 $stmt->execute($params);
 $commesse = $stmt->fetchAll();
 
-$utenteLoggato = currentUser();
 renderHeader('Simplex - Commesse');
 ?>
 <div class="container-fluid">
@@ -470,7 +472,6 @@ renderHeader('Simplex - Commesse');
                     <form method="get" class="row g-2">
                         <div class="col-md-2"><input class="form-control" name="f_protocollo" placeholder="Protocollo commessa" value="<?= htmlspecialchars($_GET['f_protocollo'] ?? '') ?>"></div>
                         <div class="col-md-2"><input class="form-control" name="f_anno_riferimento" placeholder="Anno" value="<?= htmlspecialchars($_GET['f_anno_riferimento'] ?? '') ?>"></div>
-                        <div class="col-md-3"><input class="form-control" name="f_consulente_nome" placeholder="Consulente" value="<?= htmlspecialchars($_GET['f_consulente_nome'] ?? '') ?>"></div>
                         <div class="col-md-2"><input class="form-control" name="f_offerta_protocollo" placeholder="Prot. Offerta" value="<?= htmlspecialchars($_GET['f_offerta_protocollo'] ?? '') ?>"></div>
                         <div class="col-md-2"><input class="form-control" name="f_offerta_servizio" placeholder="Servizio offerta" value="<?= htmlspecialchars($_GET['f_offerta_servizio'] ?? '') ?>"></div>
                         <div class="col-md-1"><input class="form-control" name="f_offerta_stato" placeholder="Stato" value="<?= htmlspecialchars($_GET['f_offerta_stato'] ?? '') ?>"></div>
