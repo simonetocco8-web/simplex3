@@ -348,7 +348,7 @@ $action=$_GET['action']??'list'; $viewId=(int)($_GET['view']??0); $editId=(int)(
 $offertaInModifica=null; $offertaInVisualizzazione=null;
 $filesOfferta = [];
 if($viewId>0){
-    $st=$pdo->prepare('SELECT o.*, c.protocollo AS commessa_protocollo, c.consulente_nome AS commessa_consulente FROM offerte o LEFT JOIN commesse c ON c.offerta_id=o.id WHERE o.id=:id');
+    $st=$pdo->prepare('SELECT o.*, c.id AS commessa_id, c.protocollo AS commessa_protocollo, c.consulente_nome AS commessa_consulente FROM offerte o LEFT JOIN commesse c ON c.offerta_id=o.id WHERE o.id=:id');
     $st->execute([':id'=>$viewId]);
     $offertaInVisualizzazione=$st->fetch();
     if ($offertaInVisualizzazione) {
@@ -420,7 +420,7 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
                             ]);
                         $success = 'File caricato correttamente.';
                         $viewId = $idOfferta;
-                        $st = $pdo->prepare('SELECT o.*, c.protocollo AS commessa_protocollo, c.consulente_nome AS commessa_consulente FROM offerte o LEFT JOIN commesse c ON c.offerta_id=o.id WHERE o.id=:id');
+                        $st = $pdo->prepare('SELECT o.*, c.id AS commessa_id, c.protocollo AS commessa_protocollo, c.consulente_nome AS commessa_consulente FROM offerte o LEFT JOIN commesse c ON c.offerta_id=o.id WHERE o.id=:id');
                         $st->execute([':id' => $viewId]);
                         $offertaInVisualizzazione = $st->fetch();
                         $stmtFiles = $pdo->prepare('SELECT * FROM offerte_file WHERE offerta_id = :offerta_id ORDER BY caricato_il DESC');
@@ -601,13 +601,59 @@ renderHeader('Simplex - Offerte');
 <?php foreach($errors as $error): ?><div class="alert alert-danger"><?= htmlspecialchars($error) ?></div><?php endforeach; ?>
 
 <?php if($offertaInVisualizzazione): ?>
-<div class="card mb-4">
-    <div class="card-header">Dettaglio Offerta</div>
+<div class="card mb-4 shadow-sm">
+    <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
+        <span>Dettaglio Offerta</span>
+        <span class="badge text-bg-<?= ($offertaInVisualizzazione['stato'] ?? '') === 'Aggiudicata' ? 'success' : (($offertaInVisualizzazione['stato'] ?? '') === 'Scaduta' ? 'secondary' : 'primary') ?>"><?= htmlspecialchars($offertaInVisualizzazione['stato'] ?? '-') ?></span>
+    </div>
     <div class="card-body">
-        <div class="row g-2">
-            <?php foreach($offertaInVisualizzazione as $campo => $valore): ?>
-                <div class="col-md-4"><strong><?= htmlspecialchars((string)$campo) ?>:</strong> <?= htmlspecialchars(preg_match('/(^data_|_il$|created_at$|aggiornato_il$)/', (string)$campo) ? formatDateIt($valore) : (string)($valore ?? '-')) ?></div>
-            <?php endforeach; ?>
+        <div class="row g-3">
+            <div class="col-md-3">
+                <div class="text-muted small text-uppercase">Protocollo</div>
+                <div class="fw-semibold fs-5"><?= htmlspecialchars($offertaInVisualizzazione['protocollo'] ?? '-') ?></div>
+            </div>
+            <div class="col-md-3">
+                <div class="text-muted small text-uppercase">Servizio</div>
+                <div class="fw-semibold"><?= htmlspecialchars($offertaInVisualizzazione['servizio'] ?? '-') ?></div>
+            </div>
+            <div class="col-md-3">
+                <div class="text-muted small text-uppercase">Dettaglio Servizio</div>
+                <div><?= htmlspecialchars($offertaInVisualizzazione['dettaglio_servizio'] ?? '-') ?></div>
+            </div>
+            <div class="col-md-3">
+                <div class="text-muted small text-uppercase">Stato</div>
+                <div><?= htmlspecialchars($offertaInVisualizzazione['stato'] ?? '-') ?></div>
+            </div>
+            <div class="col-md-4">
+                <div class="text-muted small text-uppercase">Sede Erogazione Servizio</div>
+                <div><?= htmlspecialchars($offertaInVisualizzazione['sede_erogazione_servizio'] ?? '-') ?></div>
+            </div>
+            <div class="col-md-2">
+                <div class="text-muted small text-uppercase">Data Offerta</div>
+                <div><?= htmlspecialchars(formatDateIt($offertaInVisualizzazione['data_offerta'] ?? null)) ?></div>
+            </div>
+            <div class="col-md-2">
+                <div class="text-muted small text-uppercase">Data Scadenza</div>
+                <div><?= htmlspecialchars(formatDateIt($offertaInVisualizzazione['data_scadenza'] ?? null)) ?></div>
+            </div>
+            <div class="col-md-4">
+                <div class="text-muted small text-uppercase">Consulente Incaricato</div>
+                <div><?= htmlspecialchars($offertaInVisualizzazione['consulente_incaricato'] ?? '-') ?></div>
+            </div>
+            <div class="col-md-4">
+                <div class="text-muted small text-uppercase">Commessa Protocollo</div>
+                <div>
+                    <?php if (!empty($offertaInVisualizzazione['commessa_id'])): ?>
+                        <a class="btn btn-sm btn-outline-success" href="commesse.php?edit=<?= (int)$offertaInVisualizzazione['commessa_id'] ?>"><?= htmlspecialchars($offertaInVisualizzazione['commessa_protocollo'] ?? '-') ?></a>
+                    <?php else: ?>
+                        -
+                    <?php endif; ?>
+                </div>
+            </div>
+            <div class="col-12">
+                <div class="text-muted small text-uppercase">Note</div>
+                <div class="border rounded bg-light p-3"><?= nl2br(htmlspecialchars($offertaInVisualizzazione['note'] ?? '-')) ?></div>
+            </div>
         </div>
     </div>
 </div>
