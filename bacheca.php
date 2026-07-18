@@ -48,6 +48,7 @@ if ($isAdminOrArea && (bool) $pdo->query("SHOW TABLES LIKE 'offerte'")->fetchCol
                 a.ragione_sociale AS azienda_nome
          FROM offerte o
          LEFT JOIN aziende a ON a.id = o.azienda_id
+         WHERE o.stato = 'Aggiudicata'
          ORDER BY (o.data_scadenza IS NULL), o.data_scadenza ASC, o.id DESC"
     )->fetchAll();
 }
