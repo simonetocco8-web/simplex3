@@ -28,9 +28,12 @@ $isAdminOrArea = in_array('Amministratore', $ruoli, true) || in_array('Responsab
 $commesseAssegnate = [];
 if ($isConsulente && $nomeCompleto !== '' && (bool) $pdo->query("SHOW TABLES LIKE 'commesse'")->fetchColumn()) {
     $stmtCommesse = $pdo->prepare(
-        'SELECT c.*, o.protocollo AS offerta_protocollo, o.servizio, o.stato
+        'SELECT c.*, o.protocollo AS offerta_protocollo, o.servizio, o.stato,
+                COALESCE(a_commessa.ragione_sociale, a_offerta.ragione_sociale) AS azienda_nome
          FROM commesse c
          LEFT JOIN offerte o ON o.id = c.offerta_id
+         LEFT JOIN aziende a_offerta ON a_offerta.id = o.azienda_id
+         LEFT JOIN aziende a_commessa ON a_commessa.id = c.azienda_cliente_id
          WHERE c.consulente_nome = :consulente_nome
          ORDER BY c.creata_il DESC'
     );
@@ -104,6 +107,7 @@ renderHeader('Simplex - Bacheca');
                             <tr>
                                 <th>Protocollo Commessa</th>
                                 <th>Protocollo Offerta</th>
+                                <th>Azienda</th>
                                 <th>Servizio</th>
                                 <th>Stato Offerta</th>
                                 <th>Data Creazione</th>
@@ -111,12 +115,13 @@ renderHeader('Simplex - Bacheca');
                             </thead>
                             <tbody>
                             <?php if (!$commesseAssegnate): ?>
-                                <tr><td colspan="5" class="text-center text-muted py-4">Nessuna commessa assegnata.</td></tr>
+                                <tr><td colspan="6" class="text-center text-muted py-4">Nessuna commessa assegnata.</td></tr>
                             <?php endif; ?>
                             <?php foreach ($commesseAssegnate as $commessa): ?>
                                 <tr>
                                     <td><a href="commesse.php?edit=<?= (int)$commessa['id'] ?>"><?= htmlspecialchars($commessa['protocollo']) ?></a></td>
                                     <td><a href="offerte.php?view=<?= (int)$commessa['offerta_id'] ?>"><?= htmlspecialchars($commessa['offerta_protocollo'] ?? '-') ?></a></td>
+                                    <td><?= htmlspecialchars($commessa['azienda_nome'] ?? '-') ?></td>
                                     <td><?= htmlspecialchars($commessa['servizio'] ?? '-') ?></td>
                                     <td><?= htmlspecialchars($commessa['stato'] ?? '-') ?></td>
                                     <td><?= htmlspecialchars(formatDateIt($commessa['creata_il'] ?? null)) ?></td>
