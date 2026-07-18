@@ -604,7 +604,10 @@ renderHeader('Simplex - Offerte');
 <div class="card mb-4 shadow-sm">
     <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
         <span>Dettaglio Offerta</span>
-        <span class="badge text-bg-<?= ($offertaInVisualizzazione['stato'] ?? '') === 'Aggiudicata' ? 'success' : (($offertaInVisualizzazione['stato'] ?? '') === 'Scaduta' ? 'secondary' : 'primary') ?>"><?= htmlspecialchars($offertaInVisualizzazione['stato'] ?? '-') ?></span>
+        <div class="d-flex flex-wrap align-items-center gap-2">
+            <span class="badge text-bg-<?= ($offertaInVisualizzazione['stato'] ?? '') === 'Aggiudicata' ? 'success' : (($offertaInVisualizzazione['stato'] ?? '') === 'Scaduta' ? 'secondary' : 'primary') ?>"><?= htmlspecialchars($offertaInVisualizzazione['stato'] ?? '-') ?></span>
+            <a class="btn btn-sm btn-outline-primary" href="offerte.php?edit=<?= (int)$offertaInVisualizzazione['id'] ?>">Modifica offerta</a>
+        </div>
     </div>
     <div class="card-body">
         <div class="row g-3">
@@ -706,6 +709,9 @@ renderHeader('Simplex - Offerte');
 
 <?php if($action==='new'||$editId>0): ?>
 <div class="card mb-4"><div class="card-header"><?= $editId>0?'Modifica Offerta':'Nuova Offerta' ?></div><div class="card-body"><form method="post" class="row g-3" id="form-offerta"><input type="hidden" name="azione" value="save"><input type="hidden" name="id" value="<?= (int)($formData['id']??0) ?>">
+<?php if ($editId > 0): ?>
+<div class="col-md-4"><label class="form-label">Protocollo</label><input class="form-control" value="<?= htmlspecialchars($formData['protocollo'] ?? '-') ?>" readonly></div>
+<?php endif; ?>
 <div class="col-md-5"><label class="form-label">Azienda *</label><select class="form-select" name="azienda_id" id="azienda_id"><option value="">-- Seleziona --</option><?php foreach($aziendeTutte as $az): ?><option value="<?= (int)$az['id'] ?>" <?= ((int)($formData['azienda_id']??0)===(int)$az['id'])?'selected':'' ?>><?= htmlspecialchars($az['ragione_sociale']) ?></option><?php endforeach; ?></select></div>
 <div class="col-md-5"><label class="form-label">Sede di erogazione del servizio</label><select class="form-select" name="sede_erogazione_servizio" id="sede_erogazione_servizio" data-selected="<?= htmlspecialchars($formData['sede_erogazione_servizio']??'') ?>"><option value=""><?= ((int)($formData['azienda_id']??0)>0) ? '-- Seleziona una sede --' : '-- Seleziona prima l\'azienda --' ?></option><?php if (!empty($formData['sede_erogazione_servizio'])): ?><option value="<?= htmlspecialchars($formData['sede_erogazione_servizio']) ?>" selected><?= htmlspecialchars($formData['sede_erogazione_servizio']) ?></option><?php endif; ?></select></div>
 <div class="col-md-2 d-flex align-items-end"><button type="button" class="btn btn-outline-primary w-100" data-bs-toggle="modal" data-bs-target="#modalNuovaAzienda">+ Nuova Azienda</button></div>
