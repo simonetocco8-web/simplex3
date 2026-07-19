@@ -285,44 +285,34 @@ if ($editId > 0) {
 }
 
 $utenteLoggato = currentUser();
-$consulenteCorrente = trim((string) ($utenteLoggato['nome_completo'] ?? ''));
 
-$anniCommesse = [];
-$serviziOfferta = [];
-$aziendeFiltro = [];
-if ($consulenteCorrente !== '') {
-    $stmtAnni = $pdo->prepare('SELECT DISTINCT anno_riferimento FROM commesse WHERE consulente_nome = :consulente_nome ORDER BY anno_riferimento DESC');
-    $stmtAnni->execute([':consulente_nome' => $consulenteCorrente]);
-    $anniCommesse = $stmtAnni->fetchAll(PDO::FETCH_COLUMN);
+$stmtAnni = $pdo->query('SELECT DISTINCT anno_riferimento FROM commesse ORDER BY anno_riferimento DESC');
+$anniCommesse = $stmtAnni->fetchAll(PDO::FETCH_COLUMN);
 
-    $stmtServizi = $pdo->prepare(
-        'SELECT DISTINCT o.servizio
-         FROM commesse c
-         LEFT JOIN offerte o ON o.id = c.offerta_id
-         WHERE c.consulente_nome = :consulente_nome AND o.servizio IS NOT NULL AND o.servizio <> ""
-         ORDER BY o.servizio'
-    );
-    $stmtServizi->execute([':consulente_nome' => $consulenteCorrente]);
-    $serviziOfferta = $stmtServizi->fetchAll(PDO::FETCH_COLUMN);
+$stmtServizi = $pdo->query(
+    'SELECT DISTINCT o.servizio
+     FROM commesse c
+     LEFT JOIN offerte o ON o.id = c.offerta_id
+     WHERE o.servizio IS NOT NULL AND o.servizio <> ""
+     ORDER BY o.servizio'
+);
+$serviziOfferta = $stmtServizi->fetchAll(PDO::FETCH_COLUMN);
 
-    $stmtAziende = $pdo->prepare(
-        'SELECT DISTINCT COALESCE(a_commessa.id, a_offerta.id) AS azienda_id,
-                COALESCE(a_commessa.ragione_sociale, a_offerta.ragione_sociale) AS ragione_sociale
-         FROM commesse c
-         LEFT JOIN offerte o ON o.id = c.offerta_id
-         LEFT JOIN aziende a_commessa ON a_commessa.id = c.azienda_cliente_id
-         LEFT JOIN aziende a_offerta ON a_offerta.id = o.azienda_id
-         WHERE c.consulente_nome = :consulente_nome
-         HAVING azienda_id IS NOT NULL
-         ORDER BY ragione_sociale'
-    );
-    $stmtAziende->execute([':consulente_nome' => $consulenteCorrente]);
-    $aziendeFiltro = $stmtAziende->fetchAll();
-}
+$stmtAziende = $pdo->query(
+    'SELECT DISTINCT COALESCE(a_commessa.id, a_offerta.id) AS azienda_id,
+            COALESCE(a_commessa.ragione_sociale, a_offerta.ragione_sociale) AS ragione_sociale
+     FROM commesse c
+     LEFT JOIN offerte o ON o.id = c.offerta_id
+     LEFT JOIN aziende a_commessa ON a_commessa.id = c.azienda_cliente_id
+     LEFT JOIN aziende a_offerta ON a_offerta.id = o.azienda_id
+     HAVING azienda_id IS NOT NULL
+     ORDER BY ragione_sociale'
+);
+$aziendeFiltro = $stmtAziende->fetchAll();
 
 $filters = ['anno_riferimento', 'offerta_servizio', 'azienda_id'];
-$where = ['c.consulente_nome = :consulente_corrente'];
-$params = [':consulente_corrente' => $consulenteCorrente];
+$where = [];
+$params = [];
 foreach ($filters as $field) {
     $key = 'f_' . $field;
     $value = trim((string) ($_GET[$key] ?? ''));
