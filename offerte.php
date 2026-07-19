@@ -348,7 +348,7 @@ $action=$_GET['action']??'list'; $viewId=(int)($_GET['view']??0); $editId=(int)(
 $offertaInModifica=null; $offertaInVisualizzazione=null;
 $filesOfferta = [];
 if($viewId>0){
-    $st=$pdo->prepare('SELECT o.*, c.protocollo AS commessa_protocollo, c.consulente_nome AS commessa_consulente FROM offerte o LEFT JOIN commesse c ON c.offerta_id=o.id WHERE o.id=:id');
+    $st=$pdo->prepare('SELECT o.*, a.ragione_sociale AS azienda_nome, c.id AS commessa_id, c.protocollo AS commessa_protocollo, c.consulente_nome AS commessa_consulente FROM offerte o LEFT JOIN aziende a ON a.id=o.azienda_id LEFT JOIN commesse c ON c.offerta_id=o.id WHERE o.id=:id');
     $st->execute([':id'=>$viewId]);
     $offertaInVisualizzazione=$st->fetch();
     if ($offertaInVisualizzazione) {
@@ -420,7 +420,7 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
                             ]);
                         $success = 'File caricato correttamente.';
                         $viewId = $idOfferta;
-                        $st = $pdo->prepare('SELECT o.*, c.protocollo AS commessa_protocollo, c.consulente_nome AS commessa_consulente FROM offerte o LEFT JOIN commesse c ON c.offerta_id=o.id WHERE o.id=:id');
+                        $st = $pdo->prepare('SELECT o.*, a.ragione_sociale AS azienda_nome, c.id AS commessa_id, c.protocollo AS commessa_protocollo, c.consulente_nome AS commessa_consulente FROM offerte o LEFT JOIN aziende a ON a.id=o.azienda_id LEFT JOIN commesse c ON c.offerta_id=o.id WHERE o.id=:id');
                         $st->execute([':id' => $viewId]);
                         $offertaInVisualizzazione = $st->fetch();
                         $stmtFiles = $pdo->prepare('SELECT * FROM offerte_file WHERE offerta_id = :offerta_id ORDER BY caricato_il DESC');
@@ -601,13 +601,72 @@ renderHeader('Simplex - Offerte');
 <?php foreach($errors as $error): ?><div class="alert alert-danger"><?= htmlspecialchars($error) ?></div><?php endforeach; ?>
 
 <?php if($offertaInVisualizzazione): ?>
-<div class="card mb-4">
-    <div class="card-header">Dettaglio Offerta</div>
+<div class="card mb-4 shadow-sm">
+    <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
+        <span>Dettaglio Offerta</span>
+        <div class="d-flex flex-wrap align-items-center gap-2">
+            <span class="badge text-bg-<?= ($offertaInVisualizzazione['stato'] ?? '') === 'Aggiudicata' ? 'success' : (($offertaInVisualizzazione['stato'] ?? '') === 'Scaduta' ? 'secondary' : 'primary') ?>"><?= htmlspecialchars($offertaInVisualizzazione['stato'] ?? '-') ?></span>
+            <a class="btn btn-sm btn-outline-primary" href="offerte.php?edit=<?= (int)$offertaInVisualizzazione['id'] ?>">Modifica offerta</a>
+        </div>
+    </div>
     <div class="card-body">
-        <div class="row g-2">
-            <?php foreach($offertaInVisualizzazione as $campo => $valore): ?>
-                <div class="col-md-4"><strong><?= htmlspecialchars((string)$campo) ?>:</strong> <?= htmlspecialchars(preg_match('/(^data_|_il$|created_at$|aggiornato_il$)/', (string)$campo) ? formatDateIt($valore) : (string)($valore ?? '-')) ?></div>
-            <?php endforeach; ?>
+        <div class="row g-3">
+            <div class="col-md-3">
+                <div class="text-muted small text-uppercase">Protocollo</div>
+                <div class="fw-semibold fs-5"><?= htmlspecialchars($offertaInVisualizzazione['protocollo'] ?? '-') ?></div>
+            </div>
+            <div class="col-md-3">
+                <div class="text-muted small text-uppercase">Ragione Sociale Azienda</div>
+                <div>
+                    <?php if (!empty($offertaInVisualizzazione['azienda_id'])): ?>
+                        <a href="aziende.php?view=<?= (int)$offertaInVisualizzazione['azienda_id'] ?>"><?= htmlspecialchars($offertaInVisualizzazione['azienda_nome'] ?? '-') ?></a>
+                    <?php else: ?>
+                        -
+                    <?php endif; ?>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="text-muted small text-uppercase">Servizio</div>
+                <div class="fw-semibold"><?= htmlspecialchars($offertaInVisualizzazione['servizio'] ?? '-') ?></div>
+            </div>
+            <div class="col-md-3">
+                <div class="text-muted small text-uppercase">Dettaglio Servizio</div>
+                <div><?= htmlspecialchars($offertaInVisualizzazione['dettaglio_servizio'] ?? '-') ?></div>
+            </div>
+            <div class="col-md-3">
+                <div class="text-muted small text-uppercase">Stato</div>
+                <div><?= htmlspecialchars($offertaInVisualizzazione['stato'] ?? '-') ?></div>
+            </div>
+            <div class="col-md-4">
+                <div class="text-muted small text-uppercase">Sede Erogazione Servizio</div>
+                <div><?= htmlspecialchars($offertaInVisualizzazione['sede_erogazione_servizio'] ?? '-') ?></div>
+            </div>
+            <div class="col-md-2">
+                <div class="text-muted small text-uppercase">Data Offerta</div>
+                <div><?= htmlspecialchars(formatDateIt($offertaInVisualizzazione['data_offerta'] ?? null)) ?></div>
+            </div>
+            <div class="col-md-2">
+                <div class="text-muted small text-uppercase">Data Scadenza</div>
+                <div><?= htmlspecialchars(formatDateIt($offertaInVisualizzazione['data_scadenza'] ?? null)) ?></div>
+            </div>
+            <div class="col-md-4">
+                <div class="text-muted small text-uppercase">Consulente Incaricato</div>
+                <div><?= htmlspecialchars($offertaInVisualizzazione['consulente_incaricato'] ?? '-') ?></div>
+            </div>
+            <div class="col-md-4">
+                <div class="text-muted small text-uppercase">Commessa Protocollo</div>
+                <div>
+                    <?php if (!empty($offertaInVisualizzazione['commessa_id'])): ?>
+                        <a class="btn btn-sm btn-outline-success" href="commesse.php?edit=<?= (int)$offertaInVisualizzazione['commessa_id'] ?>"><?= htmlspecialchars($offertaInVisualizzazione['commessa_protocollo'] ?? '-') ?></a>
+                    <?php else: ?>
+                        -
+                    <?php endif; ?>
+                </div>
+            </div>
+            <div class="col-12">
+                <div class="text-muted small text-uppercase">Note</div>
+                <div class="border rounded bg-light p-3"><?= nl2br(htmlspecialchars($offertaInVisualizzazione['note'] ?? '-')) ?></div>
+            </div>
         </div>
     </div>
 </div>
@@ -650,6 +709,9 @@ renderHeader('Simplex - Offerte');
 
 <?php if($action==='new'||$editId>0): ?>
 <div class="card mb-4"><div class="card-header"><?= $editId>0?'Modifica Offerta':'Nuova Offerta' ?></div><div class="card-body"><form method="post" class="row g-3" id="form-offerta"><input type="hidden" name="azione" value="save"><input type="hidden" name="id" value="<?= (int)($formData['id']??0) ?>">
+<?php if ($editId > 0): ?>
+<div class="col-md-4"><label class="form-label">Protocollo</label><input class="form-control" value="<?= htmlspecialchars($formData['protocollo'] ?? '-') ?>" readonly></div>
+<?php endif; ?>
 <div class="col-md-5"><label class="form-label">Azienda *</label><select class="form-select" name="azienda_id" id="azienda_id"><option value="">-- Seleziona --</option><?php foreach($aziendeTutte as $az): ?><option value="<?= (int)$az['id'] ?>" <?= ((int)($formData['azienda_id']??0)===(int)$az['id'])?'selected':'' ?>><?= htmlspecialchars($az['ragione_sociale']) ?></option><?php endforeach; ?></select></div>
 <div class="col-md-5"><label class="form-label">Sede di erogazione del servizio</label><select class="form-select" name="sede_erogazione_servizio" id="sede_erogazione_servizio" data-selected="<?= htmlspecialchars($formData['sede_erogazione_servizio']??'') ?>"><option value=""><?= ((int)($formData['azienda_id']??0)>0) ? '-- Seleziona una sede --' : '-- Seleziona prima l\'azienda --' ?></option><?php if (!empty($formData['sede_erogazione_servizio'])): ?><option value="<?= htmlspecialchars($formData['sede_erogazione_servizio']) ?>" selected><?= htmlspecialchars($formData['sede_erogazione_servizio']) ?></option><?php endif; ?></select></div>
 <div class="col-md-2 d-flex align-items-end"><button type="button" class="btn btn-outline-primary w-100" data-bs-toggle="modal" data-bs-target="#modalNuovaAzienda">+ Nuova Azienda</button></div>
