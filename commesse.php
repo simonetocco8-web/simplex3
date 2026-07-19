@@ -287,7 +287,40 @@ if ($editId > 0) {
 $utenteLoggato = currentUser();
 $consulenteCorrente = trim((string) ($utenteLoggato['nome_completo'] ?? ''));
 
-$filters = ['protocollo', 'anno_riferimento', 'offerta_protocollo', 'offerta_servizio', 'offerta_stato'];
+$anniCommesse = [];
+$serviziOfferta = [];
+$aziendeFiltro = [];
+if ($consulenteCorrente !== '') {
+    $stmtAnni = $pdo->prepare('SELECT DISTINCT anno_riferimento FROM commesse WHERE consulente_nome = :consulente_nome ORDER BY anno_riferimento DESC');
+    $stmtAnni->execute([':consulente_nome' => $consulenteCorrente]);
+    $anniCommesse = $stmtAnni->fetchAll(PDO::FETCH_COLUMN);
+
+    $stmtServizi = $pdo->prepare(
+        'SELECT DISTINCT o.servizio
+         FROM commesse c
+         LEFT JOIN offerte o ON o.id = c.offerta_id
+         WHERE c.consulente_nome = :consulente_nome AND o.servizio IS NOT NULL AND o.servizio <> ""
+         ORDER BY o.servizio'
+    );
+    $stmtServizi->execute([':consulente_nome' => $consulenteCorrente]);
+    $serviziOfferta = $stmtServizi->fetchAll(PDO::FETCH_COLUMN);
+
+    $stmtAziende = $pdo->prepare(
+        'SELECT DISTINCT COALESCE(a_commessa.id, a_offerta.id) AS azienda_id,
+                COALESCE(a_commessa.ragione_sociale, a_offerta.ragione_sociale) AS ragione_sociale
+         FROM commesse c
+         LEFT JOIN offerte o ON o.id = c.offerta_id
+         LEFT JOIN aziende a_commessa ON a_commessa.id = c.azienda_cliente_id
+         LEFT JOIN aziende a_offerta ON a_offerta.id = o.azienda_id
+         WHERE c.consulente_nome = :consulente_nome
+         HAVING azienda_id IS NOT NULL
+         ORDER BY ragione_sociale'
+    );
+    $stmtAziende->execute([':consulente_nome' => $consulenteCorrente]);
+    $aziendeFiltro = $stmtAziende->fetchAll();
+}
+
+$filters = ['anno_riferimento', 'offerta_servizio', 'azienda_id'];
 $where = ['c.consulente_nome = :consulente_corrente'];
 $params = [':consulente_corrente' => $consulenteCorrente];
 foreach ($filters as $field) {
@@ -300,15 +333,12 @@ foreach ($filters as $field) {
     if ($field === 'anno_riferimento') {
         $where[] = "c.anno_riferimento = :$key";
         $params[":$key"] = (int) $value;
-    } elseif ($field === 'offerta_protocollo') {
-        $where[] = "o.protocollo LIKE :$key";
-        $params[":$key"] = '%' . $value . '%';
     } elseif ($field === 'offerta_servizio') {
-        $where[] = "o.servizio LIKE :$key";
-        $params[":$key"] = '%' . $value . '%';
-    } elseif ($field === 'offerta_stato') {
-        $where[] = "o.stato LIKE :$key";
-        $params[":$key"] = '%' . $value . '%';
+        $where[] = "o.servizio = :$key";
+        $params[":$key"] = $value;
+    } elseif ($field === 'azienda_id') {
+        $where[] = "COALESCE(a.id, a_offerta.id) = :$key";
+        $params[":$key"] = (int) $value;
     } else {
         $where[] = "c.$field LIKE :$key";
         $params[":$key"] = '%' . $value . '%';
@@ -316,11 +346,13 @@ foreach ($filters as $field) {
 }
 
 $sql = 'SELECT c.*, o.protocollo AS offerta_protocollo, o.servizio AS offerta_servizio, o.dettaglio_servizio AS offerta_dettaglio_servizio, o.stato AS offerta_stato,
-               CONCAT(u.nome, " ", u.cognome) AS dtg_nome, a.ragione_sociale AS azienda_cliente_nome
+               CONCAT(u.nome, " ", u.cognome) AS dtg_nome,
+               COALESCE(a.ragione_sociale, a_offerta.ragione_sociale) AS azienda_cliente_nome
         FROM commesse c
         LEFT JOIN offerte o ON o.id = c.offerta_id
         LEFT JOIN utenti u ON u.id = c.dtg_utente_id
-        LEFT JOIN aziende a ON a.id = c.azienda_cliente_id';
+        LEFT JOIN aziende a ON a.id = c.azienda_cliente_id
+        LEFT JOIN aziende a_offerta ON a_offerta.id = o.azienda_id';
 if ($where) {
     $sql .= ' WHERE ' . implode(' AND ', $where);
 }
@@ -470,12 +502,32 @@ renderHeader('Simplex - Commesse');
                 <div class="card-header">Filtro ricerca commesse</div>
                 <div class="card-body">
                     <form method="get" class="row g-2">
-                        <div class="col-md-2"><input class="form-control" name="f_protocollo" placeholder="Protocollo commessa" value="<?= htmlspecialchars($_GET['f_protocollo'] ?? '') ?>"></div>
-                        <div class="col-md-2"><input class="form-control" name="f_anno_riferimento" placeholder="Anno" value="<?= htmlspecialchars($_GET['f_anno_riferimento'] ?? '') ?>"></div>
-                        <div class="col-md-2"><input class="form-control" name="f_offerta_protocollo" placeholder="Prot. Offerta" value="<?= htmlspecialchars($_GET['f_offerta_protocollo'] ?? '') ?>"></div>
-                        <div class="col-md-2"><input class="form-control" name="f_offerta_servizio" placeholder="Servizio offerta" value="<?= htmlspecialchars($_GET['f_offerta_servizio'] ?? '') ?>"></div>
-                        <div class="col-md-1"><input class="form-control" name="f_offerta_stato" placeholder="Stato" value="<?= htmlspecialchars($_GET['f_offerta_stato'] ?? '') ?>"></div>
-                        <div class="col-12 d-flex gap-2"><button class="btn btn-outline-primary" type="submit">Filtra</button><a class="btn btn-outline-secondary" href="commesse.php">Reset</a></div>
+                        <div class="col-md-3">
+                            <select class="form-select" name="f_anno_riferimento">
+                                <option value="">Anno</option>
+                                <?php foreach ($anniCommesse as $anno): ?>
+                                    <option value="<?= htmlspecialchars((string)$anno) ?>" <?= ((string)($_GET['f_anno_riferimento'] ?? '') === (string)$anno) ? 'selected' : '' ?>><?= htmlspecialchars((string)$anno) ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                        <div class="col-md-4">
+                            <select class="form-select" name="f_offerta_servizio">
+                                <option value="">Servizio Offerta</option>
+                                <?php foreach ($serviziOfferta as $servizio): ?>
+                                    <option value="<?= htmlspecialchars((string)$servizio) ?>" <?= ((string)($_GET['f_offerta_servizio'] ?? '') === (string)$servizio) ? 'selected' : '' ?>><?= htmlspecialchars((string)$servizio) ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                        <div class="col-md-4">
+                            <select class="form-select" name="f_azienda_id">
+                                <option value="">Azienda</option>
+                                <?php foreach ($aziendeFiltro as $azienda): ?>
+                                    <option value="<?= (int)$azienda['azienda_id'] ?>" <?= ((string)($_GET['f_azienda_id'] ?? '') === (string)$azienda['azienda_id']) ? 'selected' : '' ?>><?= htmlspecialchars($azienda['ragione_sociale']) ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                        <div class="col-md-1 d-grid"><button class="btn btn-outline-primary" type="submit">Filtra</button></div>
+                        <div class="col-12"><a class="btn btn-outline-secondary" href="commesse.php">Reset</a></div>
                     </form>
                 </div>
             </div>
