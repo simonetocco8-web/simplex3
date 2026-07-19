@@ -528,7 +528,7 @@ renderHeader('Simplex - Commesse');
                     <table class="table table-striped table-hover mb-0 align-middle">
                         <thead class="table-light">
                         <tr>
-                            <th>Prot.</th><th>Consulente</th><th>Protocollo Offerta</th><th>Data R.A.L.I</th><th>DTG</th><th>Budget (€)</th><th>Cliente</th><th>Servizio</th><th>Dettaglio</th>
+                            <th>Prot.</th><th>Azienda</th><th>Consulente</th><th>Protocollo Offerta</th><th>Data R.A.L.I</th><th>DTG</th><th>Budget (€)</th><th>Servizio</th><th>Dettaglio</th>
                         </tr>
                         </thead>
                         <tbody>
@@ -536,12 +536,12 @@ renderHeader('Simplex - Commesse');
                         <?php foreach ($commesse as $commessa): ?>
                             <tr>
                                 <td><a href="commesse.php?edit=<?= (int)$commessa['id'] ?>"><?= htmlspecialchars($commessa['protocollo']) ?></a></td>
+                                <td><?= htmlspecialchars($commessa['azienda_cliente_nome'] ?? '-') ?></td>
                                 <td><?= htmlspecialchars($commessa['consulente_nome']) ?></td>
                                 <td><?php if (!empty($commessa['offerta_id'])): ?><a href="offerte.php?view=<?= (int)$commessa['offerta_id'] ?>"><?= htmlspecialchars($commessa['offerta_protocollo'] ?? '-') ?></a><?php else: ?>-<?php endif; ?></td>
                                 <td><?= htmlspecialchars(formatDateIt($commessa['data_rali'] ?? null)) ?></td>
                                 <td><?= htmlspecialchars($commessa['dtg_nome'] ?? '-') ?></td>
                                 <td><?= htmlspecialchars((string)($commessa['budget'] ?? '-')) ?></td>
-                                <td><?= htmlspecialchars($commessa['azienda_cliente_nome'] ?? '-') ?></td>
                                 <td><?= htmlspecialchars($commessa['offerta_dettaglio_servizio'] ?? '-') ?></td>
                                 <td><a class="btn btn-sm btn-outline-primary" href="commesse.php?edit=<?= (int)$commessa['id'] ?>">Dettaglio</a></td>
                             </tr>
