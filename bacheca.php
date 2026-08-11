@@ -25,20 +25,28 @@ if (!$ruoli && !empty($current['ruolo'])) {
 $isConsulente = in_array('Consulente', $ruoli, true);
 $isAdminOrArea = in_array('Amministratore', $ruoli, true) || in_array('Responsabile di Area', $ruoli, true);
 
-$commesseAssegnate = [];
-if ($isConsulente && $nomeCompleto !== '' && (bool) $pdo->query("SHOW TABLES LIKE 'commesse'")->fetchColumn()) {
-    $stmtCommesse = $pdo->prepare(
+$commesseVisibili = [];
+if (($isAdminOrArea || ($isConsulente && $nomeCompleto !== '')) && (bool) $pdo->query("SHOW TABLES LIKE 'commesse'")->fetchColumn()) {
+    $sqlCommesse =
         'SELECT c.*, o.protocollo AS offerta_protocollo, o.servizio, o.stato,
                 COALESCE(a_commessa.ragione_sociale, a_offerta.ragione_sociale) AS azienda_nome
          FROM commesse c
          LEFT JOIN offerte o ON o.id = c.offerta_id
          LEFT JOIN aziende a_offerta ON a_offerta.id = o.azienda_id
-         LEFT JOIN aziende a_commessa ON a_commessa.id = c.azienda_cliente_id
-         WHERE c.consulente_nome = :consulente_nome
-         ORDER BY c.creata_il DESC'
-    );
-    $stmtCommesse->execute([':consulente_nome' => $nomeCompleto]);
-    $commesseAssegnate = $stmtCommesse->fetchAll();
+         LEFT JOIN aziende a_commessa ON a_commessa.id = c.azienda_cliente_id';
+    $parametriCommesse = [];
+
+    // I responsabili di area (e gli amministratori) vedono tutte le commesse;
+    // il filtro si applica esclusivamente agli utenti che sono solo consulenti.
+    if ($isConsulente && !$isAdminOrArea) {
+        $sqlCommesse .= ' WHERE o.consulente_incaricato = :consulente_nome';
+        $parametriCommesse[':consulente_nome'] = $nomeCompleto;
+    }
+
+    $sqlCommesse .= ' ORDER BY c.creata_il DESC';
+    $stmtCommesse = $pdo->prepare($sqlCommesse);
+    $stmtCommesse->execute($parametriCommesse);
+    $commesseVisibili = $stmtCommesse->fetchAll();
 }
 
 $offerteScadenza = [];
@@ -101,9 +109,9 @@ renderHeader('Simplex - Bacheca');
         <main class="col-12 col-md-9 col-lg-10 p-4">
             <h2 class="mb-4">Bacheca</h2>
 
-            <?php if ($isConsulente): ?>
+            <?php if ($isConsulente || $isAdminOrArea): ?>
                 <div class="card mb-4">
-                    <div class="card-header">Commesse assegnate al tuo account (Consulente)</div>
+                    <div class="card-header"><?= $isAdminOrArea ? 'Tutte le commesse' : 'Commesse assegnate al tuo account (Consulente)' ?></div>
                     <div class="table-responsive">
                         <table class="table table-striped table-hover mb-0 align-middle">
                             <thead class="table-light">
@@ -117,10 +125,10 @@ renderHeader('Simplex - Bacheca');
                             </tr>
                             </thead>
                             <tbody>
-                            <?php if (!$commesseAssegnate): ?>
-                                <tr><td colspan="6" class="text-center text-muted py-4">Nessuna commessa assegnata.</td></tr>
+                            <?php if (!$commesseVisibili): ?>
+                                <tr><td colspan="6" class="text-center text-muted py-4"><?= $isAdminOrArea ? 'Nessuna commessa presente.' : 'Nessuna commessa assegnata.' ?></td></tr>
                             <?php endif; ?>
-                            <?php foreach ($commesseAssegnate as $commessa): ?>
+                            <?php foreach ($commesseVisibili as $commessa): ?>
                                 <tr>
                                     <td><a href="commesse.php?edit=<?= (int)$commessa['id'] ?>"><?= htmlspecialchars($commessa['protocollo']) ?></a></td>
                                     <td><a href="offerte.php?view=<?= (int)$commessa['offerta_id'] ?>"><?= htmlspecialchars($commessa['offerta_protocollo'] ?? '-') ?></a></td>
