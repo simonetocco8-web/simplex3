@@ -435,7 +435,9 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
     if($azione==='save'){
         $id=(int)($_POST['id']??0);
         $servizio=trim($_POST['servizio']??''); $dettaglioServizio=trim($_POST['dettaglio_servizio']??'');
-        $stato=trim($_POST['stato']??'In Elaborazione'); $consulenteIncaricato=trim($_POST['consulente_incaricato']??'');
+        $stato=trim($_POST['stato']??'In Elaborazione');
+        // Le nuove commesse aggiudicate vengono assegnate dalla Bacheca.
+        $consulenteIncaricato=$id>0 ? trim($_POST['consulente_incaricato']??'') : '';
         $specificheOggetto=trim($_POST['specifiche_oggetto']??''); $sedeErogazione=trim($_POST['sede_erogazione_servizio']??'');
         $aziendaId = ($_POST['azienda_id'] ?? '') !== '' ? (int) $_POST['azienda_id'] : null;
         if ($sedeErogazione === '' && $aziendaId !== null) {
@@ -449,7 +451,7 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
 
         if(!in_array($servizio,$SERVIZI,true)) $errors[]='Servizio non valido.';
         if(!in_array($stato,$STATI_OFFERTA,true)) $errors[]='Stato offerta non valido.';
-        if($stato==='Aggiudicata' && !in_array($consulenteIncaricato,$CONSULENTI,true)) $errors[]='Se lo stato è Aggiudicata devi selezionare un consulente incaricato valido.';
+        if($id>0 && $stato==='Aggiudicata' && !in_array($consulenteIncaricato,$CONSULENTI,true)) $errors[]='Se lo stato è Aggiudicata devi selezionare un consulente incaricato valido.';
         $opzioniDettaglio=$DETTAGLI_SERVIZIO[$servizio]??[]; if(!$opzioniDettaglio||!in_array($dettaglioServizio,$opzioniDettaglio,true)) $errors[]='Dettaglio servizio non valido.';
         if($rcoUtenteId<=0) $errors[]='Il campo RCO è obbligatorio.';
         if ($aziendaId === null) $errors[]='Il campo Azienda è obbligatorio. Se non presente, usa il popup \"Nuova Azienda\".';
@@ -718,7 +720,9 @@ renderHeader('Simplex - Offerte');
 <div class="col-md-4"><label class="form-label">Servizio *</label><select class="form-select" name="servizio" id="servizio" required><option value="">-- Seleziona --</option><?php foreach($SERVIZI as $sv): ?><option value="<?= htmlspecialchars($sv) ?>" <?= (($formData['servizio']??'')===$sv)?'selected':'' ?>><?= htmlspecialchars($sv) ?></option><?php endforeach; ?></select></div>
 <div class="col-md-4"><label class="form-label" id="label-dettaglio">Dettaglio *</label><select class="form-select" name="dettaglio_servizio" id="dettaglio_servizio" required></select></div>
 <div class="col-md-4"><label class="form-label">Status Offerta</label><select class="form-select" name="stato" id="stato_offerta" required><?php foreach($STATI_OFFERTA as $st): ?><option value="<?= $st ?>" <?= (($formData['stato']??'In Elaborazione')===$st)?'selected':'' ?>><?= $st ?></option><?php endforeach; ?></select></div>
+<?php if($editId>0): ?>
 <div class="col-md-6" id="box-consulente"><label class="form-label">Consulente incaricato (per Aggiudicata)</label><select class="form-select" name="consulente_incaricato" id="consulente_incaricato"><option value="">-- Seleziona --</option><?php foreach($CONSULENTI as $cons): ?><option value="<?= htmlspecialchars($cons) ?>" <?= (($formData['consulente_incaricato']??'')===$cons)?'selected':'' ?>><?= htmlspecialchars($cons) ?></option><?php endforeach; ?></select></div>
+<?php endif; ?>
 <div class="col-12"><label class="form-label">Specifiche Oggetto</label><textarea class="form-control" name="specifiche_oggetto" rows="2"><?= htmlspecialchars($formData['specifiche_oggetto']??'') ?></textarea></div>
 <div class="col-md-3"><label class="form-label">RCO *</label><select class="form-select" name="rco_utente_id" required><option value="">-- Seleziona --</option><?php foreach($utenti as $u): ?><option value="<?= (int)$u['id'] ?>" <?= ((int)($formData['rco_utente_id']??0)===(int)$u['id'])?'selected':'' ?>><?= htmlspecialchars($u['nome'].' '.$u['cognome']) ?></option><?php endforeach; ?></select></div>
 <div class="col-md-3"><label class="form-label">Segnalato da</label><select class="form-select" name="segnalato_da_utente_id"><option value="">-- Seleziona --</option><?php foreach($utenti as $u): ?><option value="<?= (int)$u['id'] ?>" <?= ((int)($formData['segnalato_da_utente_id']??0)===(int)$u['id'])?'selected':'' ?>><?= htmlspecialchars($u['nome'].' '.$u['cognome']) ?></option><?php endforeach; ?></select></div>
