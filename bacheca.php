@@ -73,7 +73,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['azione'] ?? '') === 'asseg
             $stmtCommessa = $pdo->prepare(
                 "SELECT o.id AS offerta_id
                  FROM commesse c INNER JOIN offerte o ON o.id = c.offerta_id
-                 WHERE c.id = :commessa_id AND o.stato = 'Aggiudicata' FOR UPDATE"
+                 WHERE c.id = :commessa_id
+                   AND o.stato = 'Aggiudicata'
+                   AND (o.consulente_incaricato IS NULL OR TRIM(o.consulente_incaricato) = '')
+                 FOR UPDATE"
             );
             $stmtCommessa->execute([':commessa_id' => $commessaId]);
             $offertaId = (int) $stmtCommessa->fetchColumn();
@@ -142,6 +145,7 @@ if ($isConsulenteResponsabileArea && (bool) $pdo->query("SHOW TABLES LIKE 'comme
          LEFT JOIN aziende a_offerta ON a_offerta.id = o.azienda_id
          LEFT JOIN aziende a_commessa ON a_commessa.id = c.azienda_cliente_id
          WHERE o.stato = 'Aggiudicata'
+           AND (o.consulente_incaricato IS NULL OR TRIM(o.consulente_incaricato) = '')
          ORDER BY c.creata_il DESC"
     )->fetchAll();
 }
