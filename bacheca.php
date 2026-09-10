@@ -23,11 +23,15 @@ if (!$ruoli && !empty($current['ruolo'])) {
 }
 
 $isConsulente = in_array('Consulente', $ruoli, true);
+$isResponsabileArea = in_array('Responsabile di Area', $ruoli, true);
 $isAdminOrArea = in_array('Amministratore', $ruoli, true) || in_array('Responsabile di Area', $ruoli, true);
-$isConsulenteResponsabileArea = $isConsulente && in_array('Responsabile di Area', $ruoli, true);
+
+if (!(bool)$pdo->query("SHOW COLUMNS FROM offerte LIKE 'responsabile_area_utente_id'")->fetch()) {
+    $pdo->exec("ALTER TABLE offerte ADD COLUMN responsabile_area_utente_id INT UNSIGNED NULL AFTER consulente_incaricato");
+}
 
 $consulentiDisponibili = [];
-if ($isConsulenteResponsabileArea && (bool) $pdo->query("SHOW TABLES LIKE 'utenti'")->fetchColumn()) {
+if ($isResponsabileArea && (bool) $pdo->query("SHOW TABLES LIKE 'utenti'")->fetchColumn()) {
     if ((bool) $pdo->query("SHOW TABLES LIKE 'utenti_ruoli'")->fetchColumn()) {
         $righeConsulenti = $pdo->query(
             "SELECT DISTINCT u.nome, u.cognome
@@ -54,7 +58,7 @@ if (empty($_SESSION['csrf_token_bacheca'])) {
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['azione'] ?? '') === 'assegna_consulente') {
-    if (!$isConsulenteResponsabileArea) {
+    if (!$isResponsabileArea) {
         http_response_code(403);
         exit('Operazione non autorizzata.');
     }
@@ -73,9 +77,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['azione'] ?? '') === 'asseg
             $stmtCommessa = $pdo->prepare(
                 "SELECT o.id AS offerta_id
                  FROM commesse c INNER JOIN offerte o ON o.id = c.offerta_id
-                 WHERE c.id = :commessa_id AND o.stato = 'Aggiudicata' FOR UPDATE"
+                 WHERE c.id = :commessa_id
+                   AND o.stato = 'Aggiudicata'
+                   AND o.responsabile_area_utente_id = :utente_id
+                   AND (o.consulente_incaricato IS NULL OR TRIM(o.consulente_incaricato) = '')
+                 FOR UPDATE"
             );
-            $stmtCommessa->execute([':commessa_id' => $commessaId]);
+            $stmtCommessa->execute([':commessa_id' => $commessaId, ':utente_id' => $utenteId]);
             $offertaId = (int) $stmtCommessa->fetchColumn();
             if ($offertaId <= 0) {
                 throw new RuntimeException('Commessa aggiudicata non trovata.');
@@ -133,8 +141,8 @@ if (($isAdminOrArea || ($isConsulente && $nomeCompleto !== '')) && (bool) $pdo->
 }
 
 $commesseDaAssegnare = [];
-if ($isConsulenteResponsabileArea && (bool) $pdo->query("SHOW TABLES LIKE 'commesse'")->fetchColumn()) {
-    $commesseDaAssegnare = $pdo->query(
+if ($isResponsabileArea && (bool) $pdo->query("SHOW TABLES LIKE 'commesse'")->fetchColumn()) {
+    $stmtDaAssegnare = $pdo->prepare(
         "SELECT c.id, c.protocollo, o.protocollo AS offerta_protocollo, o.consulente_incaricato,
                 o.servizio, COALESCE(a_commessa.ragione_sociale, a_offerta.ragione_sociale) AS azienda_nome
          FROM commesse c
@@ -142,8 +150,12 @@ if ($isConsulenteResponsabileArea && (bool) $pdo->query("SHOW TABLES LIKE 'comme
          LEFT JOIN aziende a_offerta ON a_offerta.id = o.azienda_id
          LEFT JOIN aziende a_commessa ON a_commessa.id = c.azienda_cliente_id
          WHERE o.stato = 'Aggiudicata'
+           AND o.responsabile_area_utente_id = :utente_id
+           AND (o.consulente_incaricato IS NULL OR TRIM(o.consulente_incaricato) = '')
          ORDER BY c.creata_il DESC"
-    )->fetchAll();
+    );
+    $stmtDaAssegnare->execute([':utente_id' => $utenteId]);
+    $commesseDaAssegnare = $stmtDaAssegnare->fetchAll();
 }
 
 $offerteScadenza = [];
@@ -213,7 +225,7 @@ renderHeader('Simplex - Bacheca');
                 <div class="alert alert-danger"><?= htmlspecialchars($messaggioErrore) ?></div>
             <?php endif; ?>
 
-            <?php if ($isConsulenteResponsabileArea): ?>
+            <?php if ($isResponsabileArea): ?>
                 <div class="card mb-4">
                     <div class="card-header">Commesse da Assegnare</div>
                     <div class="table-responsive">
