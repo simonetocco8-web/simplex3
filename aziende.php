@@ -554,6 +554,14 @@ foreach ($filters as $field) {
     if ($field === 'tipologia_azienda') {
         $where[] = "FIND_IN_SET(:$key, a.tipologia_azienda) > 0";
         $params[":$key"] = $value;
+    } elseif ($field === 'regione') {
+        $where[] = "EXISTS (
+            SELECT 1
+            FROM aziende_sedi sede_filtro
+            WHERE sede_filtro.azienda_id = a.id
+              AND sede_filtro.regione = :$key
+        )";
+        $params[":$key"] = $value;
     } elseif (in_array($field, ['rco_utente_id', 'segnalata_da_utente_id', 'promotore_azienda_id'], true)) {
         $where[] = "a.$field = :$key";
         $params[":$key"] = (int) $value;
@@ -1033,6 +1041,14 @@ $referentiFormJson = json_encode($referentiForm, JSON_HEX_TAG | JSON_HEX_APOS | 
                         <div class="col-md-2"><input class="form-control" name="f_numero_civico" placeholder="Civico" value="<?= htmlspecialchars($_GET['f_numero_civico'] ?? '') ?>"></div>
                         <div class="col-md-2"><input class="form-control" name="f_cap" placeholder="CAP" value="<?= htmlspecialchars($_GET['f_cap'] ?? '') ?>"></div>
                         <div class="col-md-2"><input class="form-control" name="f_localita" placeholder="Località" value="<?= htmlspecialchars($_GET['f_localita'] ?? '') ?>"></div>
+                        <div class="col-md-3">
+                            <select class="form-select" name="f_regione" aria-label="Filtra per regione delle sedi">
+                                <option value="">Tutte le regioni</option>
+                                <?php foreach ($REGIONI_ITALIA as $regione): ?>
+                                    <option value="<?= htmlspecialchars($regione) ?>" <?= (($_GET['f_regione'] ?? '') === $regione) ? 'selected' : '' ?>><?= htmlspecialchars($regione) ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
                         <div class="col-md-1"><input class="form-control" name="f_provincia" placeholder="PR" value="<?= htmlspecialchars($_GET['f_provincia'] ?? '') ?>"></div>
                         <div class="col-md-2"><input class="form-control" name="f_organico_medio" placeholder="Organico" value="<?= htmlspecialchars($_GET['f_organico_medio'] ?? '') ?>"></div>
                         <div class="col-md-2"><input class="form-control" name="f_fatturato" placeholder="Fatturato" value="<?= htmlspecialchars($_GET['f_fatturato'] ?? '') ?>"></div>
