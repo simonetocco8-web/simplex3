@@ -329,20 +329,6 @@ foreach ($responsabiliRows as $responsabile) {
     $RESPONSABILI_AREA[(int)$responsabile['id']] = trim(($responsabile['nome'] ?? '') . ' ' . ($responsabile['cognome'] ?? ''));
 }
 
-$RESPONSABILI_AREA = [];
-if ((bool)$pdo->query("SHOW TABLES LIKE 'utenti_ruoli'")->fetchColumn()) {
-    $responsabiliRows = $pdo->query("SELECT DISTINCT u.id, u.nome, u.cognome
-                                     FROM utenti u
-                                     INNER JOIN utenti_ruoli ur ON ur.utente_id = u.id
-                                     WHERE ur.ruolo = 'Responsabile di Area' AND u.attivo = 1
-                                     ORDER BY u.nome, u.cognome")->fetchAll();
-} else {
-    $responsabiliRows = $pdo->query("SELECT id, nome, cognome FROM utenti WHERE ruolo = 'Responsabile di Area' AND attivo = 1 ORDER BY nome, cognome")->fetchAll();
-}
-foreach ($responsabiliRows as $responsabile) {
-    $RESPONSABILI_AREA[(int)$responsabile['id']] = trim(($responsabile['nome'] ?? '') . ' ' . ($responsabile['cognome'] ?? ''));
-}
-
 $aziendePromotori = [];
 $aziendeTutte = [];
 if ((bool)$pdo->query("SHOW TABLES LIKE 'aziende'")->fetchColumn()) {
