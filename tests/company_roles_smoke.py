@@ -286,19 +286,21 @@ class CompanyRolesSmoke(unittest.TestCase):
         self.assertIn('Promotore/Segnalatore', body)
         for name in ('data_offerta', 'data_scadenza', 'momento_data_momento[]'):
             tag = re.search(r'<input[^>]*name="' + re.escape(name) + r'"[^>]*>', body).group()
-            self.assertIn('type="date"', tag)
+            self.assertIn('type="text"', tag)
+            self.assertIn('js-offer-date', tag)
         self.assertIn('list="tipologie-momento"', body)
         # Check JS syntax, dynamically added row markup, and expiry calculation across DST.
         script = re.findall(r'<script>(.*?)</script>', body, re.S)[-1]
         subprocess.run(['node', '-e', 'new Function(' + json.dumps(script) + ')'], check=True)
         dates = script[script.index('function parseDate('):script.index('if(dataOff&&valIn&&scadIn)')]
         subprocess.run(['node', '-e', dates + "const assert=require('node:assert/strict');"
-                        "assert.equal(addDays('2026-10-23',30),'2026-11-22');"
+                        "assert.equal(addDays('23/10/2026',30),'22/11/2026');"
                         "assert.equal(daysBetween('2026-10-23','2026-11-22'),30);"
-                        "assert.equal(addDays('2028-02-28',1),'2028-02-29');"], check=True)
+                        "assert.equal(addDays('28/02/2028',1),'29/02/2028');"], check=True)
         row_literal = re.search(r"tr.innerHTML=('.*?');", script).group(1)
         dynamic = subprocess.check_output(['node', '-e', 'console.log(' + row_literal + ')'], text=True)
-        self.assertIn('type="date"', dynamic)
+        self.assertIn('type="text"', dynamic)
+        self.assertIn('js-offer-date', dynamic)
         self.assertIn('list="tipologie-momento"', dynamic)
         data, company = self.quick_company()
         self.assertTrue(company['ok'], company)
@@ -312,7 +314,7 @@ class CompanyRolesSmoke(unittest.TestCase):
         self.assertEqual(self.sql(f"SELECT tipologia FROM offerta_momenti_lavorazione WHERE offerta_id={row['id']}"),
                          'Verifica personalizzata')
         edit = self.request('offerte.php?edit=' + str(row['id']))
-        self.assertIn('value="2026-10-23"', edit)
+        self.assertIn('value="23/10/2026"', edit)
         self.assertIn('value="Verifica personalizzata"', edit)
         listing = self.request('offerte.php')
         self.assertIn('Filtri Offerte', listing)
@@ -775,6 +777,89 @@ new Function('document', SCRIPT)(document);
 })().catch(error=>{console.error(error);process.exitCode=1;});
 """.replace('SCRIPT', json.dumps(script))
         subprocess.run(['node', '-e', node_test], check=True)
+
+    def test_company_edit_hides_filters_and_list(self):
+        _, company = self.quick_company()
+        page = self.request('aziende.php?edit=' + str(company['id']))
+        self.assertIn('Modifica Azienda', page)
+        self.assertNotIn('Filtri Aziende', page)
+        self.assertNotIn('Elenco Aziende', page)
+        listing = self.request('aziende.php')
+        self.assertIn('Filtri Aziende', listing)
+        self.assertIn('Elenco Aziende', listing)
+
+    def test_commesse_open_closed_filter_and_protocol_title(self):
+        opened, _, _, _, _ = self.create_consuntivo_job()
+        closed, _, _, _ = self.complete_proforma()
+        open_page = self.request('commesse.php?f_stato=Aperta')
+        closed_page = self.request('commesse.php?f_stato=Chiusa')
+        self.assertIn('commesse.php?edit=' + opened + '"', open_page)
+        self.assertNotIn('commesse.php?edit=' + closed + '"', open_page)
+        self.assertIn('commesse.php?edit=' + closed + '"', closed_page)
+        self.assertNotIn('commesse.php?edit=' + opened + '"', closed_page)
+        self.assertTrue(Form(open_page).selects['f_stato']['Aperta'])
+        self.assertTrue(Form(closed_page).selects['f_stato']['Chiusa'])
+        all_page = self.request('commesse.php')
+        for job in (opened, closed):
+            self.assertIn('commesse.php?edit=' + job + '"', all_page)
+        company_id = self.sql(f'SELECT azienda_id FROM offerte WHERE id=(SELECT offerta_id FROM commesse WHERE id={opened})')
+        combined = self.request('commesse.php?f_stato=Aperta&f_azienda_id=' + company_id)
+        self.assertIn('commesse.php?edit=' + opened + '"', combined)
+        self.assertNotIn('commesse.php?edit=' + closed + '"', combined)
+        protocol = self.sql(f'SELECT protocollo FROM commesse WHERE id={opened}')
+        detail = self.request('commesse.php?edit=' + opened)
+        self.assertIn('<h2 class="mb-0">Commessa n° prot ' + protocol + '</h2>', detail)
+        self.assertIn('<title>Simplex - Commessa n° prot ' + protocol + '</title>', detail)
+
+    def test_active_menu_and_expanded_groups(self):
+        job_id, offer_id, _, _, _ = self.create_consuntivo_job()
+        company_id = self.sql(f'SELECT azienda_id FROM offerte WHERE id={offer_id}')
+        cases = [(page, page, group) for page, group in [
+            ('bacheca.php', None), ('offerte.php', None), ('commesse.php', None),
+            ('utenti.php', 'Anagrafiche'), ('aziende.php', 'Anagrafiche'),
+            ('enti_certificazione.php', 'Anagrafiche'), ('amministrazione_produzione.php', 'Amministrazione'),
+            ('proforme.php', 'Amministrazione'), ('fatture.php', 'Amministrazione'), ('pagamenti.php', 'Amministrazione'),
+        ]]
+        cases.extend([
+            ('aziende.php?edit=' + company_id, 'aziende.php', 'Anagrafiche'),
+            ('commesse.php?edit=' + job_id, 'commesse.php', None),
+            ('offerte.php?action=new', 'offerte.php', None),
+            ('lavorazioni.php?offerta_id=' + offer_id, 'offerte.php', None),
+        ])
+        for page, target, group in cases:
+            with self.subTest(page=page):
+                body = self.request(page)
+                nav = re.search(r'<nav\b.*?</nav>', body, re.S).group()
+                self.assertEqual(nav.count('aria-current="page"'), 1)
+                self.assertIn('class="nav-link active" aria-current="page" href="' + target + '"', nav)
+                if group:
+                    self.assertIn('class="nav flex-column ms-3 collapse show" id="menu' + group + '"', nav)
+                    self.assertRegex(nav, 'href="#menu' + group + '"[^>]*aria-expanded="true"')
+
+    def test_offer_italian_datepicker_roundtrip(self):
+        from pathlib import Path
+        body = self.request('offerte.php?action=new')
+        self.assertIn("dateFormat: 'd/m/Y'", body)
+        self.assertIn("locale: 'it'", body)
+        self.assertIn('disableMobile: true', body)
+        self.assertIn('initOfferDatepickers(tr);', body)
+        for resource in ('flatpickr.min.js', 'flatpickr.min.css', 'it.js'):
+            self.assertTrue(self.request('assets/vendor/flatpickr/' + resource))
+        library = str(Path(__file__).resolve().parent.parent / 'assets/vendor/flatpickr/flatpickr.min.js')
+        code = "const assert=require('node:assert/strict');const fp=require(" + json.dumps(library) + ");" +                "const date=fp.parseDate('23/10/2026','d/m/Y');assert.equal(fp.formatDate(date,'d/m/Y'),'23/10/2026');"
+        subprocess.run(['node', '-e', code], check=True)
+        _, company = self.quick_company()
+        data = self.offer_data(company['id'])
+        data.update(data_offerta='23/10/2026', data_scadenza='22/11/2026')
+        data['momento_data_momento[]'] = ['01/11/2026']
+        self.assertIn('Offerta creata correttamente', self.request('offerte.php?action=new', data))
+        offer_id = self.sql(f"SELECT id FROM offerte WHERE azienda_id={company['id']}")
+        self.assertEqual(self.sql(f'SELECT data_offerta FROM offerte WHERE id={offer_id}'), '2026-10-23')
+        self.assertEqual(self.sql(f'SELECT data_scadenza FROM offerte WHERE id={offer_id}'), '2026-11-22')
+        self.assertEqual(self.sql(f'SELECT data_momento FROM offerta_momenti_lavorazione WHERE offerta_id={offer_id}'), '2026-11-01')
+        edit = self.request('offerte.php?edit=' + offer_id)
+        for date in ('23/10/2026', '22/11/2026', '01/11/2026'):
+            self.assertIn('value="' + date + '"', edit)
 
 
 if __name__ == '__main__':

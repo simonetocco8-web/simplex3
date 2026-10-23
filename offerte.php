@@ -618,30 +618,30 @@ renderHeader('Simplex - Offerte');
 ?>
 <div class="container-fluid"><div class="row">
 <nav class="col-12 col-md-3 col-lg-2 sidebar p-3"><h1 class="h4 text-white mb-4">Simplex</h1><ul class="nav nav-pills flex-column gap-2 mb-3">
-                <li class="nav-item"><a class="nav-link" href="bacheca.php"><?= menuIcon('Bacheca') ?> Bacheca</a></li>
-                <li class="nav-item"><a class="nav-link" href="offerte.php"><?= menuIcon('Offerte') ?> Offerte</a></li>
-                <li class="nav-item"><a class="nav-link" href="commesse.php"><?= menuIcon('Commesse') ?> Commesse</a></li>
+                <li class="nav-item"><a <?= navAttributes('bacheca.php') ?> href="bacheca.php"><?= menuIcon('Bacheca') ?> Bacheca</a></li>
+                <li class="nav-item"><a <?= navAttributes('offerte.php') ?> href="offerte.php"><?= menuIcon('Offerte') ?> Offerte</a></li>
+                <li class="nav-item"><a <?= navAttributes('commesse.php') ?> href="commesse.php"><?= menuIcon('Commesse') ?> Commesse</a></li>
 
                 <li class="nav-item">
-                    <a class="nav-link d-flex justify-content-between align-items-center" data-bs-toggle="collapse" href="#menuAnagrafiche" role="button" aria-expanded="false" aria-controls="menuAnagrafiche">
+                    <a class="nav-link d-flex justify-content-between align-items-center<?= navGroupActive('Anagrafiche') ? ' active' : '' ?>" data-bs-toggle="collapse" href="#menuAnagrafiche" role="button" aria-expanded="<?= navGroupActive('Anagrafiche') ? 'true' : 'false' ?>" aria-controls="menuAnagrafiche">
                         <span><?= menuIcon('Anagrafiche') ?> Anagrafiche</span><span>▾</span>
                     </a>
-                    <ul class="nav flex-column ms-3 collapse" id="menuAnagrafiche">
-                        <li class="nav-item"><a class="nav-link" href="utenti.php"><?= menuIcon('Utenti') ?> Utenti</a></li>
-                        <li class="nav-item"><a class="nav-link" href="aziende.php"><?= menuIcon('Aziende') ?> Aziende</a></li>
-                        <li class="nav-item"><a class="nav-link" href="enti_certificazione.php"><?= menuIcon('Enti di Certificazione') ?> Enti di Certificazione</a></li>
+                    <ul class="nav flex-column ms-3 collapse<?= navGroupActive('Anagrafiche') ? ' show' : '' ?>" id="menuAnagrafiche">
+                        <li class="nav-item"><a <?= navAttributes('utenti.php') ?> href="utenti.php"><?= menuIcon('Utenti') ?> Utenti</a></li>
+                        <li class="nav-item"><a <?= navAttributes('aziende.php') ?> href="aziende.php"><?= menuIcon('Aziende') ?> Aziende</a></li>
+                        <li class="nav-item"><a <?= navAttributes('enti_certificazione.php') ?> href="enti_certificazione.php"><?= menuIcon('Enti di Certificazione') ?> Enti di Certificazione</a></li>
                     </ul>
                 </li>
 
                 <li class="nav-item">
-                    <a class="nav-link d-flex justify-content-between align-items-center" data-bs-toggle="collapse" href="#menuAmministrazione" role="button" aria-expanded="false" aria-controls="menuAmministrazione">
+                    <a class="nav-link d-flex justify-content-between align-items-center<?= navGroupActive('Amministrazione') ? ' active' : '' ?>" data-bs-toggle="collapse" href="#menuAmministrazione" role="button" aria-expanded="<?= navGroupActive('Amministrazione') ? 'true' : 'false' ?>" aria-controls="menuAmministrazione">
                         <span><?= menuIcon('Amministrazione') ?> Amministrazione</span><span>▾</span>
                     </a>
-                    <ul class="nav flex-column ms-3 collapse" id="menuAmministrazione">
-                        <li class="nav-item"><a class="nav-link" href="amministrazione_produzione.php"><?= menuIcon('Produzione') ?> Produzione</a></li>
-                        <li class="nav-item"><a class="nav-link" href="proforme.php"><?= menuIcon('Pro-Forma') ?> Pro-Forma</a></li>
-                        <li class="nav-item"><a class="nav-link" href="fatture.php"><?= menuIcon('Fatture') ?> Fatture</a></li>
-                        <li class="nav-item"><a class="nav-link" href="pagamenti.php"><?= menuIcon('Pagamenti') ?> Pagamenti</a></li>
+                    <ul class="nav flex-column ms-3 collapse<?= navGroupActive('Amministrazione') ? ' show' : '' ?>" id="menuAmministrazione">
+                        <li class="nav-item"><a <?= navAttributes('amministrazione_produzione.php') ?> href="amministrazione_produzione.php"><?= menuIcon('Produzione') ?> Produzione</a></li>
+                        <li class="nav-item"><a <?= navAttributes('proforme.php') ?> href="proforme.php"><?= menuIcon('Pro-Forma') ?> Pro-Forma</a></li>
+                        <li class="nav-item"><a <?= navAttributes('fatture.php') ?> href="fatture.php"><?= menuIcon('Fatture') ?> Fatture</a></li>
+                        <li class="nav-item"><a <?= navAttributes('pagamenti.php') ?> href="pagamenti.php"><?= menuIcon('Pagamenti') ?> Pagamenti</a></li>
                     </ul>
                 </li>
 
@@ -772,9 +772,9 @@ renderHeader('Simplex - Offerte');
 <div class="col-md-4"><label class="form-label">Status Offerta</label><select class="form-select" name="stato" id="stato_offerta" required><?php foreach($STATI_OFFERTA as $st): ?><option value="<?= $st ?>" <?= (($formData['stato']??'In Elaborazione')===$st)?'selected':'' ?>><?= $st ?></option><?php endforeach; ?></select></div>
 <div class="col-12"><label class="form-label">Specifiche Oggetto</label><textarea class="form-control" name="specifiche_oggetto" rows="2"><?= htmlspecialchars($formData['specifiche_oggetto']??'') ?></textarea></div>
 <div class="col-md-3"><label class="form-label">RCO *</label><select class="form-select" name="rco_utente_id" required><option value="">-- Seleziona --</option><?php foreach($utenti as $u): ?><option value="<?= (int)$u['id'] ?>" <?= ((int)($formData['rco_utente_id']??0)===(int)$u['id'])?'selected':'' ?>><?= htmlspecialchars($u['nome'].' '.$u['cognome']) ?></option><?php endforeach; ?></select></div>
-<div class="col-md-4"><label class="form-label">Data Offerta *</label><input type="date" class="form-control" id="data_offerta" name="data_offerta" placeholder="gg/mm/aaaa" required value="<?= htmlspecialchars(normalizeDateForDb($formData['data_offerta']??'') ?? '') ?>"></div>
+<div class="col-md-4"><label class="form-label">Data Offerta *</label><input type="text" class="form-control js-offer-date" id="data_offerta" name="data_offerta" placeholder="gg/mm/aaaa" required value="<?= htmlspecialchars(formatDateInputIt($formData['data_offerta']??'')) ?>"></div>
 <div class="col-md-4"><label class="form-label">Validità (giorni) *</label><input type="number" min="1" class="form-control" id="validita_giorni" name="validita_giorni" required value="<?= htmlspecialchars($formData['validita_giorni']??'') ?>"></div>
-<div class="col-md-4"><label class="form-label">Data Scadenza</label><input type="date" class="form-control" id="data_scadenza" name="data_scadenza" placeholder="gg/mm/aaaa" value="<?= htmlspecialchars(normalizeDateForDb($formData['data_scadenza']??'') ?? '') ?>"></div>
+<div class="col-md-4"><label class="form-label">Data Scadenza</label><input type="text" class="form-control js-offer-date" id="data_scadenza" name="data_scadenza" placeholder="gg/mm/aaaa" value="<?= htmlspecialchars(formatDateInputIt($formData['data_scadenza']??'')) ?>"></div>
 <div class="col-md-4"><label class="form-label">Modalità di Pagamento</label><select class="form-select" name="modalita_pagamento" required><option value="">-- Seleziona --</option><?php foreach($MODALITA_PAGAMENTO as $m): ?><option value="<?= htmlspecialchars($m) ?>" <?= (($formData['modalita_pagamento']??'')===$m)?'selected':'' ?>><?= htmlspecialchars($m) ?></option><?php endforeach; ?></select></div>
 <div class="col-md-4"><label class="form-label">Promotore/Segnalatore</label><select class="form-select" name="promotore_azienda_id"><option value="">-- Seleziona --</option><?php foreach($aziendePromotori as $az): ?><option value="<?= (int)$az['id'] ?>" <?= ((int)($formData['promotore_azienda_id']??0)===(int)$az['id'])?'selected':'' ?>><?= htmlspecialchars($az['ragione_sociale']) ?></option><?php endforeach; ?></select></div>
 <div class="col-md-2"><label class="form-label">Commissione</label><select class="form-select" name="commissione_tipo"><option value="">--</option><option value="percentuale" <?= (($formData['commissione_tipo']??'')==='percentuale')?'selected':'' ?>>%</option><option value="euro" <?= (($formData['commissione_tipo']??'')==='euro')?'selected':'' ?>>€</option></select></div>
@@ -790,7 +790,7 @@ renderHeader('Simplex - Offerte');
             <?php $momRows = $momentiOfferta ?: [['data_momento'=>'','tipologia'=>'Apertura','valore_giornaliero_uomo'=>'','costo_totale'=>'','ore'=>'0','giorni'=>'0']]; ?>
             <?php foreach($momRows as $m): ?>
                 <tr>
-                    <td><input type="date" class="form-control" name="momento_data_momento[]" placeholder="gg/mm/aaaa" value="<?= htmlspecialchars(normalizeDateForDb($m['data_momento'] ?? '') ?? '') ?>"></td>
+                    <td><input type="text" class="form-control js-offer-date" name="momento_data_momento[]" placeholder="gg/mm/aaaa" value="<?= htmlspecialchars(formatDateInputIt($m['data_momento'] ?? '')) ?>"></td>
                     <td><input class="form-control" name="momento_tipologia[]" list="tipologie-momento" maxlength="120" value="<?= htmlspecialchars($m['tipologia'] ?? '') ?>" placeholder="Seleziona o scrivi una tipologia"></td>
                     <td><input type="number" min="0" step="0.01" class="form-control momento-costo" name="momento_costo_totale[]" value="<?= htmlspecialchars((string)($m['costo_totale'] ?? ((float)($m['valore_giornaliero_uomo'] ?? 0) * (float)($m['giorni'] ?? 0))) ) ?>"></td>
                     <td><input type="number" min="0" step="0.01" class="form-control momento-valore" name="momento_valore_giornaliero_uomo[]" value="<?= htmlspecialchars((string)($m['valore_giornaliero_uomo'] ?? '')) ?>"></td>
@@ -924,18 +924,35 @@ renderHeader('Simplex - Offerte');
   </div>
 </div>
 
+<link rel="stylesheet" href="assets/vendor/flatpickr/flatpickr.min.css">
+<script src="assets/vendor/flatpickr/flatpickr.min.js"></script>
+<script src="assets/vendor/flatpickr/it.js"></script>
 <script>
+function initOfferDatepickers(root = document) {
+    root.querySelectorAll('.js-offer-date').forEach(input => {
+        if (!input._flatpickr) flatpickr(input, {dateFormat: 'd/m/Y', locale: 'it', allowInput: true, disableMobile: true});
+    });
+}
+initOfferDatepickers();
 const dettagliPerServizio = <?= json_encode($DETTAGLI_SERVIZIO, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
 const dettaglioPreselezionato = <?= json_encode($formData['dettaglio_servizio'] ?? '', JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
 const servizioSelect=document.getElementById('servizio'); const detSel=document.getElementById('dettaglio_servizio'); const lbl=document.getElementById('label-dettaglio');
 function renderDettaglio(){ if(!servizioSelect||!detSel||!lbl) return; const s=servizioSelect.value; const op=dettagliPerServizio[s]||[]; lbl.textContent=s==='SISTEMI DI GESTIONE AZIENDALE'?'SottoServizio *':'Servizio Specifico *'; detSel.innerHTML='<option value="">-- Seleziona --</option>'; op.forEach(v=>{const o=document.createElement('option');o.value=v;o.textContent=v;if(v===dettaglioPreselezionato)o.selected=true;detSel.appendChild(o);}); }
 if(servizioSelect){servizioSelect.addEventListener('change',renderDettaglio); renderDettaglio();}
 const dataOff=document.getElementById('data_offerta'), valIn=document.getElementById('validita_giorni'), scadIn=document.getElementById('data_scadenza');
-function parseDate(value){if(!/^\d{4}-\d{2}-\d{2}$/.test(value||''))return null;const date=new Date(`${value}T00:00:00Z`);return Number.isNaN(date.getTime())?null:date;}
-function addDays(value,days){const date=parseDate(value);if(!date)return '';date.setUTCDate(date.getUTCDate()+Number(days));return date.toISOString().slice(0,10);}
+function parseDate(value){
+    const text=(value||'').trim();
+    const italian=/^(\d{2})\/(\d{2})\/(\d{4})$/.exec(text);
+    const iso=italian?`${italian[3]}-${italian[2]}-${italian[1]}`:text;
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(iso))return null;
+    const date=new Date(`${iso}T00:00:00Z`);
+    return !Number.isNaN(date.getTime())&&date.toISOString().slice(0,10)===iso?date:null;
+}
+function italianDate(date){return `${String(date.getUTCDate()).padStart(2,'0')}/${String(date.getUTCMonth()+1).padStart(2,'0')}/${date.getUTCFullYear()}`;}
+function addDays(value,days){const date=parseDate(value);if(!date)return '';date.setUTCDate(date.getUTCDate()+Number(days));return italianDate(date);}
 function daysBetween(a,b){const d1=parseDate(a),d2=parseDate(b);return d1&&d2?Math.round((d2-d1)/86400000):0;}
 if(dataOff&&valIn&&scadIn){
-    const updateExpiry=()=>{if(dataOff.value&&valIn.value)scadIn.value=addDays(dataOff.value,valIn.value);};
+    const updateExpiry=()=>{if(dataOff.value&&valIn.value){const value=addDays(dataOff.value,valIn.value);if(scadIn._flatpickr)scadIn._flatpickr.setDate(value,false,'d/m/Y');else scadIn.value=value;}};
     valIn.addEventListener('input',updateExpiry);
     dataOff.addEventListener('change',updateExpiry);
     scadIn.addEventListener('change',()=>{if(dataOff.value&&scadIn.value){const days=daysBetween(dataOff.value,scadIn.value);if(days>0)valIn.value=days;}});
@@ -1120,8 +1137,9 @@ if(tabellaMomentiOfferta&&btnAggiungiMomentoOfferta){
     });
     btnAggiungiMomentoOfferta.addEventListener('click',()=>{
         const tr=document.createElement('tr');
-        tr.innerHTML='<td><input type=\"date\" class=\"form-control\" name=\"momento_data_momento[]\" placeholder=\"gg/mm/aaaa\"></td><td><input class=\"form-control\" name=\"momento_tipologia[]\" list=\"tipologie-momento\" maxlength=\"120\" placeholder=\"Seleziona o scrivi una tipologia\"></td><td><input type=\"number\" min=\"0\" step=\"0.01\" class=\"form-control momento-costo\" name=\"momento_costo_totale[]\"></td><td><input type=\"number\" min=\"0\" step=\"0.01\" class=\"form-control momento-valore\" name=\"momento_valore_giornaliero_uomo[]\"></td><td><input type=\"number\" min=\"0\" step=\"1\" class=\"form-control momento-giorni\" name=\"momento_giorni[]\" value=\"0\" readonly></td><td><input type=\"number\" min=\"0\" step=\"1\" class=\"form-control momento-ore\" name=\"momento_ore[]\" value=\"0\" readonly></td><td><button type=\"button\" class=\"btn btn-sm btn-outline-danger btn-rimuovi-momento\">✕</button></td>';
+        tr.innerHTML='<td><input type=\"text\" class=\"form-control js-offer-date\" name=\"momento_data_momento[]\" placeholder=\"gg/mm/aaaa\"></td><td><input class=\"form-control\" name=\"momento_tipologia[]\" list=\"tipologie-momento\" maxlength=\"120\" placeholder=\"Seleziona o scrivi una tipologia\"></td><td><input type=\"number\" min=\"0\" step=\"0.01\" class=\"form-control momento-costo\" name=\"momento_costo_totale[]\"></td><td><input type=\"number\" min=\"0\" step=\"0.01\" class=\"form-control momento-valore\" name=\"momento_valore_giornaliero_uomo[]\"></td><td><input type=\"number\" min=\"0\" step=\"1\" class=\"form-control momento-giorni\" name=\"momento_giorni[]\" value=\"0\" readonly></td><td><input type=\"number\" min=\"0\" step=\"1\" class=\"form-control momento-ore\" name=\"momento_ore[]\" value=\"0\" readonly></td><td><button type=\"button\" class=\"btn btn-sm btn-outline-danger btn-rimuovi-momento\">✕</button></td>';
         tabellaMomentiOfferta.appendChild(tr);
+        initOfferDatepickers(tr);
         aggiornaCalcoloMomento(tr);
         aggiornaTotaliMomenti();
     });
