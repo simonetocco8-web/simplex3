@@ -26,29 +26,31 @@ $isConsulente = in_array('Consulente', $ruoli, true);
 $isResponsabileArea = in_array('Responsabile di Area', $ruoli, true);
 $isAdminOrArea = in_array('Amministratore', $ruoli, true) || in_array('Responsabile di Area', $ruoli, true);
 
-if (!(bool)$pdo->query("SHOW COLUMNS FROM offerte LIKE 'responsabile_area_utente_id'")->fetch()) {
-    $pdo->exec("ALTER TABLE offerte ADD COLUMN responsabile_area_utente_id INT UNSIGNED NULL AFTER consulente_incaricato");
+// Link new assignments to a user ID; retain names for existing reports and legacy jobs.
+if (!(bool)$pdo->query("SHOW COLUMNS FROM commesse LIKE 'consulente_utente_id'")->fetch()) {
+    $pdo->exec("ALTER TABLE commesse ADD COLUMN consulente_utente_id INT UNSIGNED NULL,
+        ADD CONSTRAINT fk_commessa_consulente_utente FOREIGN KEY (consulente_utente_id) REFERENCES utenti(id) ON DELETE SET NULL");
 }
 
 $consulentiDisponibili = [];
-if ($isResponsabileArea && (bool) $pdo->query("SHOW TABLES LIKE 'utenti'")->fetchColumn()) {
+if ($isAdminOrArea && (bool) $pdo->query("SHOW TABLES LIKE 'utenti'")->fetchColumn()) {
     if ((bool) $pdo->query("SHOW TABLES LIKE 'utenti_ruoli'")->fetchColumn()) {
         $righeConsulenti = $pdo->query(
-            "SELECT DISTINCT u.nome, u.cognome
+            "SELECT DISTINCT u.id, u.nome, u.cognome
              FROM utenti u
-             INNER JOIN utenti_ruoli ur ON ur.utente_id = u.id
-             WHERE ur.ruolo = 'Consulente' AND u.attivo = 1
+             LEFT JOIN utenti_ruoli ur ON ur.utente_id = u.id
+             WHERE (ur.ruolo = 'Consulente' OR u.ruolo = 'Consulente') AND u.attivo = 1
              ORDER BY u.nome, u.cognome"
         )->fetchAll();
     } else {
         $righeConsulenti = $pdo->query(
-            "SELECT nome, cognome FROM utenti WHERE ruolo = 'Consulente' AND attivo = 1 ORDER BY nome, cognome"
+            "SELECT id, nome, cognome FROM utenti WHERE ruolo = 'Consulente' AND attivo = 1 ORDER BY nome, cognome"
         )->fetchAll();
     }
     foreach ($righeConsulenti as $rigaConsulente) {
         $nomeConsulente = trim(($rigaConsulente['nome'] ?? '') . ' ' . ($rigaConsulente['cognome'] ?? ''));
         if ($nomeConsulente !== '') {
-            $consulentiDisponibili[] = $nomeConsulente;
+            $consulentiDisponibili[(int)$rigaConsulente['id']] = $nomeConsulente;
         }
     }
 }
@@ -58,7 +60,7 @@ if (empty($_SESSION['csrf_token_bacheca'])) {
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['azione'] ?? '') === 'assegna_consulente') {
-    if (!$isResponsabileArea) {
+    if (!$isAdminOrArea) {
         http_response_code(403);
         exit('Operazione non autorizzata.');
     }
@@ -68,10 +70,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['azione'] ?? '') === 'asseg
     }
 
     $commessaId = (int) ($_POST['commessa_id'] ?? 0);
-    $consulenteIncaricato = trim((string) ($_POST['consulente_incaricato'] ?? ''));
-    if ($commessaId <= 0 || !in_array($consulenteIncaricato, $consulentiDisponibili, true)) {
+    $consulenteId = (int)($_POST['consulente_utente_id'] ?? 0);
+    if ($commessaId <= 0 || !isset($consulentiDisponibili[$consulenteId])) {
         $_SESSION['bacheca_errore'] = 'Seleziona un consulente valido.';
     } else {
+        $consulenteIncaricato = $consulentiDisponibili[$consulenteId];
         $pdo->beginTransaction();
         try {
             $stmtCommessa = $pdo->prepare(
@@ -79,11 +82,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['azione'] ?? '') === 'asseg
                  FROM commesse c INNER JOIN offerte o ON o.id = c.offerta_id
                  WHERE c.id = :commessa_id
                    AND o.stato = 'Aggiudicata'
-                   AND o.responsabile_area_utente_id = :utente_id
                    AND (o.consulente_incaricato IS NULL OR TRIM(o.consulente_incaricato) = '')
                  FOR UPDATE"
             );
-            $stmtCommessa->execute([':commessa_id' => $commessaId, ':utente_id' => $utenteId]);
+            $stmtCommessa->execute([':commessa_id' => $commessaId]);
             $offertaId = (int) $stmtCommessa->fetchColumn();
             if ($offertaId <= 0) {
                 throw new RuntimeException('Commessa aggiudicata non trovata.');
@@ -93,11 +95,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['azione'] ?? '') === 'asseg
                 ':id' => $offertaId,
             ]);
             $pdo->prepare(
-                'UPDATE commesse SET consulente_nome = :consulente, consulente_codice = :codice WHERE id = :id'
+                'UPDATE commesse SET consulente_nome = :consulente, consulente_codice = :codice, consulente_utente_id = :consulente_id WHERE id = :id'
             )->execute([
                 ':consulente' => $consulenteIncaricato,
                 ':codice' => substr($consulenteIncaricato, 0, 2),
                 ':id' => $commessaId,
+                ':consulente_id' => $consulenteId,
             ]);
             $pdo->commit();
             $_SESSION['bacheca_successo'] = 'Consulente incaricato aggiornato correttamente.';
@@ -117,7 +120,7 @@ $messaggioErrore = $_SESSION['bacheca_errore'] ?? null;
 unset($_SESSION['bacheca_successo'], $_SESSION['bacheca_errore']);
 
 $commesseVisibili = [];
-if (($isAdminOrArea || ($isConsulente && $nomeCompleto !== '')) && (bool) $pdo->query("SHOW TABLES LIKE 'commesse'")->fetchColumn()) {
+if ($isConsulente && !$isAdminOrArea && $nomeCompleto !== '' && (bool) $pdo->query("SHOW TABLES LIKE 'commesse'")->fetchColumn()) {
     $sqlCommesse =
         'SELECT c.*, o.protocollo AS offerta_protocollo, o.servizio, o.stato,
                 COALESCE(a_commessa.ragione_sociale, a_offerta.ragione_sociale) AS azienda_nome
@@ -127,12 +130,10 @@ if (($isAdminOrArea || ($isConsulente && $nomeCompleto !== '')) && (bool) $pdo->
          LEFT JOIN aziende a_commessa ON a_commessa.id = c.azienda_cliente_id';
     $parametriCommesse = [];
 
-    // I responsabili di area (e gli amministratori) vedono tutte le commesse;
-    // il filtro si applica esclusivamente agli utenti che sono solo consulenti.
-    if ($isConsulente && !$isAdminOrArea) {
-        $sqlCommesse .= ' WHERE o.consulente_incaricato = :consulente_nome';
-        $parametriCommesse[':consulente_nome'] = $nomeCompleto;
-    }
+    $sqlCommesse .= ' WHERE c.consulente_utente_id = :utente_id
+        OR (c.consulente_utente_id IS NULL AND o.consulente_incaricato = :consulente_nome)';
+    $parametriCommesse[':utente_id'] = $utenteId;
+    $parametriCommesse[':consulente_nome'] = $nomeCompleto;
 
     $sqlCommesse .= ' ORDER BY c.creata_il DESC';
     $stmtCommesse = $pdo->prepare($sqlCommesse);
@@ -141,20 +142,25 @@ if (($isAdminOrArea || ($isConsulente && $nomeCompleto !== '')) && (bool) $pdo->
 }
 
 $commesseDaAssegnare = [];
-if ($isResponsabileArea && (bool) $pdo->query("SHOW TABLES LIKE 'commesse'")->fetchColumn()) {
+if ($isAdminOrArea && (bool) $pdo->query("SHOW TABLES LIKE 'commesse'")->fetchColumn()) {
     $stmtDaAssegnare = $pdo->prepare(
         "SELECT c.id, c.protocollo, o.protocollo AS offerta_protocollo, o.consulente_incaricato,
-                o.servizio, COALESCE(a_commessa.ragione_sociale, a_offerta.ragione_sociale) AS azienda_nome
+                o.servizio, o.note,
+                COALESCE(importi.subtotale, 0) * (1 - COALESCE(o.sconto_percentuale, 0) / 100) AS importo_totale,
+                COALESCE(a_commessa.ragione_sociale, a_offerta.ragione_sociale) AS azienda_nome
          FROM commesse c
          INNER JOIN offerte o ON o.id = c.offerta_id
          LEFT JOIN aziende a_offerta ON a_offerta.id = o.azienda_id
          LEFT JOIN aziende a_commessa ON a_commessa.id = c.azienda_cliente_id
+         LEFT JOIN (
+             SELECT offerta_id, SUM(costo_totale) AS subtotale
+             FROM offerta_momenti_lavorazione GROUP BY offerta_id
+         ) importi ON importi.offerta_id = o.id
          WHERE o.stato = 'Aggiudicata'
-           AND o.responsabile_area_utente_id = :utente_id
            AND (o.consulente_incaricato IS NULL OR TRIM(o.consulente_incaricato) = '')
          ORDER BY c.creata_il DESC"
     );
-    $stmtDaAssegnare->execute([':utente_id' => $utenteId]);
+    $stmtDaAssegnare->execute();
     $commesseDaAssegnare = $stmtDaAssegnare->fetchAll();
 }
 
@@ -225,7 +231,7 @@ renderHeader('Simplex - Bacheca');
                 <div class="alert alert-danger"><?= htmlspecialchars($messaggioErrore) ?></div>
             <?php endif; ?>
 
-            <?php if ($isResponsabileArea): ?>
+            <?php if ($isAdminOrArea): ?>
                 <div class="card mb-4">
                     <div class="card-header">Commesse da Assegnare</div>
                     <div class="table-responsive">
@@ -236,13 +242,15 @@ renderHeader('Simplex - Bacheca');
                                 <th>Protocollo Offerta</th>
                                 <th>Azienda</th>
                                 <th>Servizio</th>
+                                <th class="text-end">Importo</th>
+                                <th>Note</th>
                                 <th>Consulente incaricato</th>
                                 <th class="text-center">Assegna</th>
                             </tr>
                             </thead>
                             <tbody>
                             <?php if (!$commesseDaAssegnare): ?>
-                                <tr><td colspan="6" class="text-center text-muted py-4">Nessuna commessa aggiudicata presente.</td></tr>
+                                <tr><td colspan="8" class="text-center text-muted py-4">Nessuna commessa aggiudicata presente.</td></tr>
                             <?php endif; ?>
                             <?php foreach ($commesseDaAssegnare as $commessa): ?>
                                 <tr>
@@ -250,6 +258,17 @@ renderHeader('Simplex - Bacheca');
                                     <td><?= htmlspecialchars($commessa['offerta_protocollo'] ?? '-') ?></td>
                                     <td><?= htmlspecialchars($commessa['azienda_nome'] ?? '-') ?></td>
                                     <td><?= htmlspecialchars($commessa['servizio'] ?? '-') ?></td>
+                                    <td class="text-end">€ <?= number_format((float)$commessa['importo_totale'], 2, ',', '.') ?></td>
+                                    <td>
+                                        <?php if (trim((string)($commessa['note'] ?? '')) !== ''): ?>
+                                            <button type="button" class="btn btn-sm btn-outline-secondary js-note-offerta"
+                                                    data-bs-toggle="modal" data-bs-target="#modalNoteOfferta"
+                                                    data-note="<?= htmlspecialchars($commessa['note'], ENT_QUOTES) ?>"
+                                                    title="Visualizza note offerta" aria-label="Visualizza note offerta"><?= menuIcon('Note') ?></button>
+                                        <?php else: ?>
+                                            <span class="text-muted">-</span>
+                                        <?php endif; ?>
+                                    </td>
                                     <td><?= htmlspecialchars($commessa['consulente_incaricato'] ?? '-') ?></td>
                                     <td class="text-center">
                                         <button type="button" class="btn btn-sm btn-outline-primary js-assegna-consulente"
@@ -257,7 +276,7 @@ renderHeader('Simplex - Bacheca');
                                                 data-commessa-id="<?= (int) $commessa['id'] ?>"
                                                 data-commessa-protocollo="<?= htmlspecialchars($commessa['protocollo'], ENT_QUOTES) ?>"
                                                 data-consulente="<?= htmlspecialchars($commessa['consulente_incaricato'] ?? '', ENT_QUOTES) ?>"
-                                                title="Visualizza o modifica il consulente incaricato"
+                                                title="Assegna consulente"
                                                 aria-label="Assegna consulente alla commessa <?= htmlspecialchars($commessa['protocollo'], ENT_QUOTES) ?>">👤</button>
                                     </td>
                                 </tr>
@@ -268,9 +287,9 @@ renderHeader('Simplex - Bacheca');
                 </div>
             <?php endif; ?>
 
-            <?php if ($isConsulente || $isAdminOrArea): ?>
+            <?php if ($isConsulente && !$isAdminOrArea): ?>
                 <div class="card mb-4">
-                    <div class="card-header"><?= $isAdminOrArea ? 'Tutte le commesse' : 'Commesse assegnate al tuo account (Consulente)' ?></div>
+                    <div class="card-header">Commesse assegnate al tuo account (Consulente)</div>
                     <div class="table-responsive">
                         <table class="table table-striped table-hover mb-0 align-middle">
                             <thead class="table-light">
@@ -285,7 +304,7 @@ renderHeader('Simplex - Bacheca');
                             </thead>
                             <tbody>
                             <?php if (!$commesseVisibili): ?>
-                                <tr><td colspan="6" class="text-center text-muted py-4"><?= $isAdminOrArea ? 'Nessuna commessa presente.' : 'Nessuna commessa assegnata.' ?></td></tr>
+                                <tr><td colspan="6" class="text-center text-muted py-4">Nessuna commessa assegnata.</td></tr>
                             <?php endif; ?>
                             <?php foreach ($commesseVisibili as $commessa): ?>
                                 <tr>
@@ -355,13 +374,13 @@ renderHeader('Simplex - Bacheca');
     </div>
 </div>
 
-<?php if ($isConsulenteResponsabileArea): ?>
+<?php if ($isAdminOrArea): ?>
 <div class="modal fade" id="modalAssegnaConsulente" tabindex="-1" aria-labelledby="modalAssegnaConsulenteLabel" aria-hidden="true">
     <div class="modal-dialog">
         <div class="modal-content">
             <form method="post">
                 <div class="modal-header">
-                    <h5 class="modal-title" id="modalAssegnaConsulenteLabel">Consulente incaricato (per Aggiudicata)</h5>
+                    <h5 class="modal-title" id="modalAssegnaConsulenteLabel">Assegna consulente alla commessa</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Chiudi"></button>
                 </div>
                 <div class="modal-body">
@@ -370,10 +389,10 @@ renderHeader('Simplex - Bacheca');
                     <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token_bacheca']) ?>">
                     <input type="hidden" name="commessa_id" id="commessaIdModal">
                     <label class="form-label" for="consulenteIncaricatoModal">Consulente incaricato</label>
-                    <select class="form-select" name="consulente_incaricato" id="consulenteIncaricatoModal" required>
+                    <select class="form-select" name="consulente_utente_id" id="consulenteIncaricatoModal" required>
                         <option value="">-- Seleziona --</option>
-                        <?php foreach ($consulentiDisponibili as $consulente): ?>
-                            <option value="<?= htmlspecialchars($consulente) ?>"><?= htmlspecialchars($consulente) ?></option>
+                        <?php foreach ($consulentiDisponibili as $consulenteId => $consulente): ?>
+                            <option value="<?= (int)$consulenteId ?>"><?= htmlspecialchars($consulente) ?></option>
                         <?php endforeach; ?>
                     </select>
                 </div>
@@ -385,13 +404,25 @@ renderHeader('Simplex - Bacheca');
         </div>
     </div>
 </div>
+<div class="modal fade" id="modalNoteOfferta" tabindex="-1" aria-labelledby="modalNoteOffertaLabel" aria-hidden="true">
+    <div class="modal-dialog"><div class="modal-content">
+        <div class="modal-header">
+            <h5 class="modal-title" id="modalNoteOffertaLabel">Note offerta</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Chiudi"></button>
+        </div>
+        <div class="modal-body"><p id="testoNoteOfferta" class="text-break" style="white-space: pre-wrap"></p></div>
+    </div></div>
+</div>
 <script>
-document.querySelectorAll('.js-assegna-consulente').forEach((button) => {
-    button.addEventListener('click', () => {
-        document.getElementById('commessaIdModal').value = button.dataset.commessaId;
-        document.getElementById('protocolloCommessaModal').textContent = button.dataset.commessaProtocollo;
-        document.getElementById('consulenteIncaricatoModal').value = button.dataset.consulente;
-    });
+document.getElementById('modalAssegnaConsulente').addEventListener('show.bs.modal', (event) => {
+    const button = event.relatedTarget;
+    if (!button) return;
+    document.getElementById('commessaIdModal').value = button.dataset.commessaId;
+    document.getElementById('protocolloCommessaModal').textContent = button.dataset.commessaProtocollo;
+    document.getElementById('consulenteIncaricatoModal').value = '';
+});
+document.getElementById('modalNoteOfferta').addEventListener('show.bs.modal', (event) => {
+    document.getElementById('testoNoteOfferta').textContent = event.relatedTarget?.dataset.note || '';
 });
 </script>
 <?php endif; ?>
