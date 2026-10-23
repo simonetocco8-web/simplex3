@@ -8,90 +8,69 @@ if (!isLoggedIn()) {
     exit;
 }
 
-$filters = [
-    'protocollo', 'anno_riferimento', 'consulente_nome', 'offerta_protocollo', 'offerta_stato',
-    'dtg_utente_id', 'azienda_cliente_id', 'data_rali', 'budget_min', 'budget_max',
-];
-
+require_once __DIR__ . '/includes/production.php';
+require_once __DIR__ . '/includes/consuntivo.php';
+// Timestamp values are compared as UTC; calendar periods are computed in Europe/Rome.
+$pdo->exec("SET time_zone = '+00:00'");
+$periods = productionPeriods();
+$period = (string)($_GET['f_periodo'] ?? 'tutto');
+if (!isset($periods[$period])) $period = 'tutto';
+$service = trim((string)($_GET['f_servizio'] ?? ''));
+$specific = trim((string)($_GET['f_servizio_specifico'] ?? ''));
+$services = $pdo->query("SELECT DISTINCT servizio FROM offerte WHERE servizio <> '' ORDER BY servizio")->fetchAll(PDO::FETCH_COLUMN);
+$specificStmt = $pdo->prepare("SELECT DISTINCT dettaglio_servizio FROM offerte WHERE dettaglio_servizio <> ''"
+    . ($service !== '' ? ' AND servizio = :servizio' : '') . ' ORDER BY dettaglio_servizio');
+$specificStmt->execute($service !== '' ? ['servizio' => $service] : []);
+$specifics = $specificStmt->fetchAll(PDO::FETCH_COLUMN);
 $where = [];
 $params = [];
-
-foreach ($filters as $field) {
-    $key = 'f_' . $field;
-    $value = trim((string) ($_GET[$key] ?? ''));
-    if ($value === '') {
-        continue;
-    }
-
-    switch ($field) {
-        case 'anno_riferimento':
-            $where[] = 'c.anno_riferimento = :f_anno_riferimento';
-            $params[':f_anno_riferimento'] = (int) $value;
-            break;
-        case 'offerta_protocollo':
-            $where[] = 'o.protocollo LIKE :f_offerta_protocollo';
-            $params[':f_offerta_protocollo'] = '%' . $value . '%';
-            break;
-        case 'offerta_stato':
-            $where[] = 'o.stato LIKE :f_offerta_stato';
-            $params[':f_offerta_stato'] = '%' . $value . '%';
-            break;
-        case 'dtg_utente_id':
-            $where[] = 'c.dtg_utente_id = :f_dtg_utente_id';
-            $params[':f_dtg_utente_id'] = (int) $value;
-            break;
-        case 'azienda_cliente_id':
-            $where[] = 'c.azienda_cliente_id = :f_azienda_cliente_id';
-            $params[':f_azienda_cliente_id'] = (int) $value;
-            break;
-        case 'data_rali':
-            $where[] = 'c.data_rali = :f_data_rali';
-            $params[':f_data_rali'] = normalizeDateForDb($value);
-            break;
-        case 'budget_min':
-            if (is_numeric(str_replace(',', '.', $value))) {
-                $where[] = 'c.budget >= :f_budget_min';
-                $params[':f_budget_min'] = (float) str_replace(',', '.', $value);
-            }
-            break;
-        case 'budget_max':
-            if (is_numeric(str_replace(',', '.', $value))) {
-                $where[] = 'c.budget <= :f_budget_max';
-                $params[':f_budget_max'] = (float) str_replace(',', '.', $value);
-            }
-            break;
-        default:
-            $where[] = "c.$field LIKE :$key";
-            $params[":$key"] = '%' . $value . '%';
-    }
+[$start, $end] = productionPeriodBounds($period);
+if ($start !== null) {
+    $where[] = 'c.creata_il >= :inizio AND c.creata_il < :fine';
+    $params['inizio'] = $start;
+    $params['fine'] = $end;
 }
-
-$utenti = $pdo->query('SELECT id, nome, cognome FROM utenti ORDER BY nome, cognome')->fetchAll();
-$aziende = [];
-if ((bool) $pdo->query("SHOW TABLES LIKE 'aziende'")->fetchColumn()) {
-    $aziende = $pdo->query('SELECT id, ragione_sociale FROM aziende ORDER BY ragione_sociale')->fetchAll();
-}
-
-$sql = 'SELECT c.*, o.protocollo AS offerta_protocollo, o.stato AS offerta_stato,
-               CONCAT(u.nome, " ", u.cognome) AS dtg_nome,
-               a.ragione_sociale AS azienda_cliente_nome
+if ($service !== '') { $where[] = 'o.servizio = :servizio'; $params['servizio'] = $service; }
+if ($specific !== '') { $where[] = 'o.dettaglio_servizio = :specifico'; $params['specifico'] = $specific; }
+// Resolve old name-only assignments only when exactly one account has that name.
+$hasUserId = (bool)$pdo->query("SHOW COLUMNS FROM commesse LIKE 'consulente_utente_id'")->fetch();
+$userId = $hasUserId ? 'c.consulente_utente_id' : 'NULL';
+$stateColumn = $pdo->query("SHOW COLUMNS FROM commesse LIKE 'stato'")->fetch() ? 'c.stato' : "'In corso'";
+$sql = "SELECT c.id, $stateColumn AS stato, COALESCE($userId, legacy.id) AS utente_id,
+               ROUND(COALESCE(importi.subtotale,0) * (1 - COALESCE(o.sconto_percentuale,0)/100),2) AS importo
         FROM commesse c
-        LEFT JOIN offerte o ON o.id = c.offerta_id
-        LEFT JOIN utenti u ON u.id = c.dtg_utente_id
-        LEFT JOIN aziende a ON a.id = c.azienda_cliente_id';
-if ($where) {
-    $sql .= ' WHERE ' . implode(' AND ', $where);
-}
-$sql .= ' ORDER BY c.id DESC';
-
+        LEFT JOIN offerte o ON o.id=c.offerta_id
+        LEFT JOIN (
+            SELECT TRIM(CONCAT(nome,' ',cognome)) AS nome, MIN(id) AS id
+            FROM utenti GROUP BY TRIM(CONCAT(nome,' ',cognome)) HAVING COUNT(*)=1
+        ) legacy ON $userId IS NULL AND legacy.nome =
+            COALESCE(NULLIF(TRIM(o.consulente_incaricato),''), NULLIF(TRIM(c.consulente_nome),'N/D'))
+        LEFT JOIN (
+            SELECT offerta_id,SUM(costo_totale) AS subtotale
+            FROM offerta_momenti_lavorazione GROUP BY offerta_id
+        ) importi ON importi.offerta_id=o.id";
+if ($where) $sql .= ' WHERE ' . implode(' AND ', $where);
 $stmt = $pdo->prepare($sql);
 $stmt->execute($params);
-$commesse = $stmt->fetchAll();
-
-$totaleBudget = 0.0;
-foreach ($commesse as $c) {
-    $totaleBudget += (float) ($c['budget'] ?? 0);
+$productionRows = $stmt->fetchAll();
+$users = $pdo->query('SELECT id,nome,cognome,nome_utente FROM utenti ORDER BY nome,cognome,id')->fetchAll();
+$workloads = [];
+foreach ($users as $user) {
+    $workloads[(int)$user['id']] = $user + ['aperte' => 0, 'gestite' => 0, 'importo_centesimi' => 0];
 }
+$unassigned = 0;
+$unassignedAmount = 0;
+foreach ($productionRows as $row) {
+    $id = (int)($row['utente_id'] ?? 0);
+    $cents = consuntivoCents($row['importo']);
+    if (!isset($workloads[$id])) { $unassigned++; $unassignedAmount += $cents; continue; }
+    $workloads[$id]['gestite']++;
+    if ($row['stato'] !== 'Completato') $workloads[$id]['aperte']++;
+    $workloads[$id]['importo_centesimi'] += $cents;
+}
+$totalOpen = array_sum(array_column($workloads, 'aperte'));
+$totalManaged = array_sum(array_column($workloads, 'gestite'));
+$totalAmount = array_sum(array_column($workloads, 'importo_centesimi'));
 
 $utenteLoggato = currentUser();
 renderHeader('Simplex - Amministrazione / Produzione');
@@ -143,96 +122,63 @@ renderHeader('Simplex - Amministrazione / Produzione');
         <main class="col-12 col-md-9 col-lg-10 p-4">
             <h2 class="mb-4">Amministrazione / Produzione</h2>
 
+            <p class="text-muted">Carico di Lavoro: commesse aperte assegnate all'utente. Importo: totale delle offerte collegate, al netto dello sconto,
+                per tutte le commesse gestite (aperte e chiuse). Il periodo filtra la data di creazione della commessa, nel fuso orario italiano.</p>
             <div class="card mb-4">
-                <div class="card-header">Filtra commesse</div>
+                <div class="card-header">Filtra produzione</div>
                 <div class="card-body">
-                    <form method="get" class="row g-2">
-                        <div class="col-md-2"><input class="form-control" name="f_protocollo" placeholder="Protocollo" value="<?= htmlspecialchars($_GET['f_protocollo'] ?? '') ?>"></div>
-                        <div class="col-md-2"><input class="form-control" name="f_anno_riferimento" placeholder="Anno" value="<?= htmlspecialchars($_GET['f_anno_riferimento'] ?? '') ?>"></div>
-                        <div class="col-md-2"><input class="form-control" name="f_consulente_nome" placeholder="Consulente" value="<?= htmlspecialchars($_GET['f_consulente_nome'] ?? '') ?>"></div>
-                        <div class="col-md-2"><input class="form-control" name="f_offerta_protocollo" placeholder="Prot. Offerta" value="<?= htmlspecialchars($_GET['f_offerta_protocollo'] ?? '') ?>"></div>
-                        <div class="col-md-2"><input class="form-control" name="f_offerta_stato" placeholder="Stato Offerta" value="<?= htmlspecialchars($_GET['f_offerta_stato'] ?? '') ?>"></div>
-                        <div class="col-md-2"><input class="form-control" name="f_data_rali" placeholder="gg/mm/aaaa" value="<?= htmlspecialchars($_GET['f_data_rali'] ?? '') ?>"></div>
-
-                        <div class="col-md-3">
-                            <select class="form-select" name="f_dtg_utente_id">
-                                <option value="">DTG</option>
-                                <?php foreach ($utenti as $u): ?>
-                                    <option value="<?= (int)$u['id'] ?>" <?= ((string)($_GET['f_dtg_utente_id'] ?? '') === (string)$u['id']) ? 'selected' : '' ?>>
-                                        <?= htmlspecialchars($u['nome'] . ' ' . $u['cognome']) ?>
-                                    </option>
+                    <form method="get" class="row g-3">
+                        <div class="col-md-3"><label class="form-label" for="periodo">Periodo</label>
+                            <select class="form-select" name="f_periodo" id="periodo">
+                                <?php foreach ($periods as $value => $label): ?>
+                                    <option value="<?= $value ?>" <?= $period === $value ? 'selected' : '' ?>><?= htmlspecialchars($label) ?></option>
                                 <?php endforeach; ?>
                             </select>
                         </div>
-                        <div class="col-md-3">
-                            <select class="form-select" name="f_azienda_cliente_id">
-                                <option value="">Ragione Sociale Cliente</option>
-                                <?php foreach ($aziende as $a): ?>
-                                    <option value="<?= (int)$a['id'] ?>" <?= ((string)($_GET['f_azienda_cliente_id'] ?? '') === (string)$a['id']) ? 'selected' : '' ?>>
-                                        <?= htmlspecialchars($a['ragione_sociale']) ?>
-                                    </option>
+                        <div class="col-md-3"><label class="form-label" for="servizio">Servizio</label>
+                            <select class="form-select" name="f_servizio" id="servizio" onchange="this.form.elements.f_servizio_specifico.value='';this.form.submit()">
+                                <option value="">Tutti i servizi</option>
+                                <?php foreach ($services as $value): ?>
+                                    <option value="<?= htmlspecialchars($value) ?>" <?= $service === $value ? 'selected' : '' ?>><?= htmlspecialchars($value) ?></option>
                                 <?php endforeach; ?>
                             </select>
                         </div>
-                        <div class="col-md-3"><input type="number" step="0.01" min="0" class="form-control" name="f_budget_min" placeholder="Budget min" value="<?= htmlspecialchars($_GET['f_budget_min'] ?? '') ?>"></div>
-                        <div class="col-md-3"><input type="number" step="0.01" min="0" class="form-control" name="f_budget_max" placeholder="Budget max" value="<?= htmlspecialchars($_GET['f_budget_max'] ?? '') ?>"></div>
-
-                        <div class="col-12 d-flex gap-2">
-                            <button class="btn btn-outline-primary" type="submit">Filtra</button>
-                            <a class="btn btn-outline-secondary" href="amministrazione_produzione.php">Reset</a>
+                        <div class="col-md-4"><label class="form-label" for="specifico">Servizio Specifico</label>
+                            <select class="form-select" name="f_servizio_specifico" id="specifico">
+                                <option value="">Tutti i servizi specifici</option>
+                                <?php foreach ($specifics as $value): ?>
+                                    <option value="<?= htmlspecialchars($value) ?>" <?= $specific === $value ? 'selected' : '' ?>><?= htmlspecialchars($value) ?></option>
+                                <?php endforeach; ?>
+                            </select>
                         </div>
+                        <div class="col-md-2 d-flex align-items-end gap-2"><button class="btn btn-primary" type="submit">Filtra</button><a class="btn btn-outline-secondary" href="amministrazione_produzione.php">Reset</a></div>
                     </form>
                 </div>
             </div>
-
             <div class="card">
-                <div class="card-header">Elenco commesse (Produzione)</div>
+                <div class="card-header">Carico di Lavoro e Importo per utente</div>
                 <div class="table-responsive">
                     <table class="table table-striped table-hover mb-0 align-middle">
-                        <thead class="table-light">
-                        <tr>
-                            <th>Protocollo Commessa</th>
-                            <th>Anno</th>
-                            <th>Consulente</th>
-                            <th>Protocollo Offerta</th>
-                            <th>Stato Offerta</th>
-                            <th>Data R.A.L.I</th>
-                            <th>DTG</th>
-                            <th>Budget (€)</th>
-                            <th>Cliente</th>
-                        </tr>
-                        </thead>
+                        <thead><tr><th>Utente</th><th class="text-end">Carico di Lavoro (aperte)</th><th class="text-end">Commesse gestite</th><th class="text-end">Importo</th></tr></thead>
                         <tbody>
-                        <?php if (!$commesse): ?>
-                            <tr><td colspan="9" class="text-center text-muted py-4">Nessuna commessa trovata.</td></tr>
-                        <?php endif; ?>
-                        <?php foreach ($commesse as $commessa): ?>
-                            <tr>
-                                <td><?= htmlspecialchars($commessa['protocollo']) ?></td>
-                                <td><?= htmlspecialchars((string)$commessa['anno_riferimento']) ?></td>
-                                <td><?= htmlspecialchars($commessa['consulente_nome']) ?></td>
-                                <td><?= htmlspecialchars($commessa['offerta_protocollo'] ?? '-') ?></td>
-                                <td><?= htmlspecialchars($commessa['offerta_stato'] ?? '-') ?></td>
-                                <td><?= htmlspecialchars(formatDateIt($commessa['data_rali'] ?? null)) ?></td>
-                                <td><?= htmlspecialchars($commessa['dtg_nome'] ?? '-') ?></td>
-                                <td>
-                                    <?php if (isset($commessa['budget']) && $commessa['budget'] !== null && $commessa['budget'] !== ''): ?>
-                                        € <?= number_format((float)$commessa['budget'], 2, ',', '.') ?>
-                                    <?php else: ?>
-                                        -
-                                    <?php endif; ?>
-                                </td>
-                                <td><?= htmlspecialchars($commessa['azienda_cliente_nome'] ?? '-') ?></td>
+                        <?php foreach ($workloads as $row): ?>
+                            <tr data-utente-id="<?= (int)$row['id'] ?>">
+                                <td><?= htmlspecialchars(trim($row['nome'].' '.$row['cognome'])) ?> <span class="text-muted small">(<?= htmlspecialchars($row['nome_utente']) ?>)</span></td>
+                                <td class="text-end" data-metric="carico"><?= $row['aperte'] ?></td>
+                                <td class="text-end" data-metric="gestite"><?= $row['gestite'] ?></td>
+                                <td class="text-end" data-metric="importo">€ <?= number_format($row['importo_centesimi']/100,2,',','.') ?></td>
                             </tr>
                         <?php endforeach; ?>
+                        <?php if (!$workloads): ?><tr><td colspan="4">Nessun utente presente.</td></tr><?php endif; ?>
                         </tbody>
+                        <tfoot><tr class="fw-bold"><td>Totale utenti</td><td class="text-end"><?= $totalOpen ?></td><td class="text-end"><?= $totalManaged ?></td><td class="text-end">€ <?= number_format($totalAmount/100,2,',','.') ?></td></tr></tfoot>
                     </table>
                 </div>
-                <div class="card-footer">
-                    <strong>Totale Budget commesse in tabella:</strong>
-                    € <?= number_format($totaleBudget, 2, ',', '.') ?>
-                </div>
             </div>
+            <?php if ($unassigned > 0): ?>
+                <p class="text-muted mt-3">Commesse senza utente identificabile: <?= $unassigned ?> · Importo: € <?= number_format($unassignedAmount/100,2,',','.') ?>.
+                    Queste commesse sono escluse dai totali per utente.</p>
+            <?php endif; ?>
         </main>
     </div>
 </div>
