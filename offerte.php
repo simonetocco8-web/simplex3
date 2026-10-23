@@ -7,7 +7,7 @@ require_once __DIR__ . '/includes/company.php';
 $SERVIZI = [
     'SISTEMI DI GESTIONE AZIENDALE', 'SICUREZZA', 'FORMAZIONE', 'FINANZA AGEVOLATA', 'CONSULENZA SOA', 'ALTRE CONSULENZE',
 ];
-$STATI_OFFERTA = ['In Elaborazione', 'Inviata', 'Aggiudicata', 'Scaduta'];
+$STATI_OFFERTA = ['In Elaborazione', 'Approvata e Inviata', 'Aggiudicata', 'Scaduta'];
 
 $DETTAGLI_SERVIZIO = [
     'SISTEMI DI GESTIONE AZIENDALE' => ['ISO 9001','MANT ISO 9001','ISO 14001','MANT ISO 14001','EMAS','MANTENIMENTO EMAS','ISO 45001','MANT ISO 45001','SA 8000','MANT SA8000','ISO 50000','MANT ISO 50000','ISO 27001','MANT ISO 27001','ISO 27017','MANT ISO 27017','ISO 27018','MANT ISO 27018','ISO 42000','MANT ISO 42000','ISO 37001','MANT ISO 37001','ISO 39001','MANT 39001','ISO 22000','MANT ISO 22000','ISO 22005','MANT ISO 22005','ISO 1090','MANT ISO 1090','SISTEMA INTEGRATO','MANTENIMENTO SISTEMA INTEGRATO','HALAL','MANTENIMENTO HALAL','GLOBAL GAP','MANTENIMENTO GLOBAL GAP','BIOLOGICO','MANTENIMENTO BIOLOGICO','MARC CE','FPC CLS','MANTENIMENTO FPC CLS','MANTENIMENTO MAR CE','BRC','MANTENIMENTO BRC AEO','Parità di genere','MANTENIMENTO Parità di genere','MODELLO 231','ODV 231','PRIVACY (GDPR)','HACCP','MANT HACCP','ANALISI TAMPONE HACCP'],
@@ -312,6 +312,7 @@ $migrations=[
 ];
 foreach($migrations as $col=>$sql){ if(!(bool)$pdo->query("SHOW COLUMNS FROM offerte LIKE '{$col}'")->fetch()){ $pdo->exec($sql);} }
 $pdo->exec("ALTER TABLE offerte MODIFY COLUMN stato VARCHAR(20) NOT NULL DEFAULT 'In Elaborazione'");
+$pdo->exec("UPDATE offerte SET stato = 'Approvata e Inviata' WHERE stato = 'Inviata'");
 $pdo->exec("ALTER TABLE offerte MODIFY COLUMN sede_erogazione_servizio TEXT NULL");
 $pdo->exec("UPDATE offerte SET stato = 'In Elaborazione' WHERE stato IN ('Generata', 'In Lavorazione')");
 if (!(bool)$pdo->query("SHOW COLUMNS FROM offerta_momenti_lavorazione LIKE 'costo_totale'")->fetch()) {
@@ -330,20 +331,6 @@ foreach (['offerta_momenti_lavorazione', 'commessa_momenti_lavorazione'] as $tab
 
 $utenti = $pdo->query('SELECT id, nome, cognome FROM utenti ORDER BY nome, cognome')->fetchAll();
 $utentiRcoAzienda = companyRcoUsers($pdo);
-$RESPONSABILI_AREA = [];
-if ((bool)$pdo->query("SHOW TABLES LIKE 'utenti_ruoli'")->fetchColumn()) {
-    $responsabiliRows = $pdo->query("SELECT DISTINCT u.id, u.nome, u.cognome
-                                     FROM utenti u
-                                     INNER JOIN utenti_ruoli ur ON ur.utente_id = u.id
-                                     WHERE ur.ruolo = 'Responsabile di Area' AND u.attivo = 1
-                                     ORDER BY u.nome, u.cognome")->fetchAll();
-} else {
-    $responsabiliRows = $pdo->query("SELECT id, nome, cognome FROM utenti WHERE ruolo = 'Responsabile di Area' AND attivo = 1 ORDER BY nome, cognome")->fetchAll();
-}
-foreach ($responsabiliRows as $responsabile) {
-    $RESPONSABILI_AREA[(int)$responsabile['id']] = trim(($responsabile['nome'] ?? '') . ' ' . ($responsabile['cognome'] ?? ''));
-}
-
 $aziendePromotori = [];
 $aziendeTutte = [];
 if ((bool)$pdo->query("SHOW TABLES LIKE 'aziende'")->fetchColumn()) {
@@ -456,13 +443,15 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
         $id=(int)($_POST['id']??0);
         $servizio=trim($_POST['servizio']??''); $dettaglioServizio=trim($_POST['dettaglio_servizio']??'');
         $stato=trim($_POST['stato']??'In Elaborazione');
-        $responsabileAreaUtenteId=($_POST['responsabile_area_utente_id']??'')!=='' ? (int)$_POST['responsabile_area_utente_id'] : null;
+        $responsabileAreaUtenteId = null;
         // Il consulente può essere assegnato esclusivamente dalla Bacheca del responsabile.
         $consulenteIncaricato='';
         if($id>0){
-            $stmtConsulente=$pdo->prepare('SELECT consulente_incaricato FROM offerte WHERE id=:id');
+            $stmtConsulente=$pdo->prepare('SELECT consulente_incaricato, responsabile_area_utente_id FROM offerte WHERE id=:id');
             $stmtConsulente->execute([':id'=>$id]);
-            $consulenteIncaricato=trim((string)$stmtConsulente->fetchColumn());
+            $assegnazioneEsistente = $stmtConsulente->fetch() ?: [];
+            $consulenteIncaricato = trim((string)($assegnazioneEsistente['consulente_incaricato'] ?? ''));
+            $responsabileAreaUtenteId = $assegnazioneEsistente['responsabile_area_utente_id'] ?? null;
         }
         $specificheOggetto=trim($_POST['specifiche_oggetto']??''); $sedeErogazione=trim($_POST['sede_erogazione_servizio']??'');
         $aziendaId = ($_POST['azienda_id'] ?? '') !== '' ? (int) $_POST['azienda_id'] : null;
@@ -483,8 +472,6 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
 
         if(!in_array($servizio,$SERVIZI,true)) $errors[]='Servizio non valido.';
         if(!in_array($stato,$STATI_OFFERTA,true)) $errors[]='Stato offerta non valido.';
-        if($stato==='Aggiudicata' && ($responsabileAreaUtenteId===null || !isset($RESPONSABILI_AREA[$responsabileAreaUtenteId]))) $errors[]='Se lo stato è Aggiudicata devi selezionare un Responsabile di Area valido.';
-        if($stato!=='Aggiudicata') $responsabileAreaUtenteId=null;
         $opzioniDettaglio=$DETTAGLI_SERVIZIO[$servizio]??[]; if(!$opzioniDettaglio||!in_array($dettaglioServizio,$opzioniDettaglio,true)) $errors[]='Dettaglio servizio non valido.';
         if($rcoUtenteId<=0) $errors[]='Il campo RCO è obbligatorio.';
         if ($aziendaId === null) $errors[]='Il campo Azienda è obbligatorio. Se non presente, usa il popup \"Nuova Azienda\".';
@@ -782,7 +769,6 @@ renderHeader('Simplex - Offerte');
 <div class="col-md-4"><label class="form-label">Servizio *</label><select class="form-select" name="servizio" id="servizio" required><option value="">-- Seleziona --</option><?php foreach($SERVIZI as $sv): ?><option value="<?= htmlspecialchars($sv) ?>" <?= (($formData['servizio']??'')===$sv)?'selected':'' ?>><?= htmlspecialchars($sv) ?></option><?php endforeach; ?></select></div>
 <div class="col-md-4"><label class="form-label" id="label-dettaglio">Dettaglio *</label><select class="form-select" name="dettaglio_servizio" id="dettaglio_servizio" required></select></div>
 <div class="col-md-4"><label class="form-label">Status Offerta</label><select class="form-select" name="stato" id="stato_offerta" required><?php foreach($STATI_OFFERTA as $st): ?><option value="<?= $st ?>" <?= (($formData['stato']??'In Elaborazione')===$st)?'selected':'' ?>><?= $st ?></option><?php endforeach; ?></select></div>
-<div class="col-md-6" id="box-responsabile-area"><label class="form-label">Responsabile di Area *</label><select class="form-select" name="responsabile_area_utente_id" id="responsabile_area_utente_id"><option value="">-- Seleziona --</option><?php foreach($RESPONSABILI_AREA as $responsabileId=>$responsabileNome): ?><option value="<?= $responsabileId ?>" <?= ((int)($formData['responsabile_area_utente_id']??0)===$responsabileId)?'selected':'' ?>><?= htmlspecialchars($responsabileNome) ?></option><?php endforeach; ?></select></div>
 <div class="col-12"><label class="form-label">Specifiche Oggetto</label><textarea class="form-control" name="specifiche_oggetto" rows="2"><?= htmlspecialchars($formData['specifiche_oggetto']??'') ?></textarea></div>
 <div class="col-md-3"><label class="form-label">RCO *</label><select class="form-select" name="rco_utente_id" required><option value="">-- Seleziona --</option><?php foreach($utenti as $u): ?><option value="<?= (int)$u['id'] ?>" <?= ((int)($formData['rco_utente_id']??0)===(int)$u['id'])?'selected':'' ?>><?= htmlspecialchars($u['nome'].' '.$u['cognome']) ?></option><?php endforeach; ?></select></div>
 <div class="col-md-4"><label class="form-label">Data Offerta *</label><input type="date" class="form-control" id="data_offerta" name="data_offerta" placeholder="gg/mm/aaaa" required value="<?= htmlspecialchars(normalizeDateForDb($formData['data_offerta']??'') ?? '') ?>"></div>
@@ -953,10 +939,6 @@ if(dataOff&&valIn&&scadIn){
     dataOff.addEventListener('change',updateExpiry);
     scadIn.addEventListener('change',()=>{if(dataOff.value&&scadIn.value){const days=daysBetween(dataOff.value,scadIn.value);if(days>0)valIn.value=days;}});
 }
-const statoSel=document.getElementById('stato_offerta');
-const responsabileAreaBox=document.getElementById('box-responsabile-area'); const responsabileAreaSel=document.getElementById('responsabile_area_utente_id');
-function toggleResponsabileArea(){ if(!statoSel) return; const on=statoSel.value==='Aggiudicata'; if(responsabileAreaBox&&responsabileAreaSel){responsabileAreaBox.style.display=on?'block':'none';responsabileAreaSel.required=on;if(!on)responsabileAreaSel.value='';} }
-if(statoSel){statoSel.addEventListener('change',toggleResponsabileArea); toggleResponsabileArea();}
 const aziendaSel=document.getElementById('azienda_id');
 const sedeErogazioneInput=document.getElementById('sede_erogazione_servizio');
 function resetSediErogazione(placeholder){

@@ -63,6 +63,7 @@ function menuIcon(string $label): string
         'Fatture' => '<path d="M5 2h14v20l-3-2-4 2-4-2-3 2V2zM8 6h8M8 10h8M8 14h5"/>',
         'Pagamenti' => '<rect x="2" y="4" width="20" height="16" rx="2"/><path d="M2 9h20M6 15h4"/>',
         'Impostazioni' => '<circle cx="12" cy="12" r="3"/><path d="m9 3 1-1h4l1 3 3 1 3 1v4l-2 2-1 3-1 3h-4l-2-2-3-1-3-1v-4l2-2 1-3z"/>',
+        'Note' => '<path d="M4 3h16v13l-5 5H4zM15 21v-5h5M8 7h8M8 11h8M8 15h3"/>',
         'Modifica' => '<path d="m16 3 5 5L8 21H3v-5zM14 5l5 5"/>',
         'Lavorazioni' => '<path d="M14 6a6 6 0 0 0-8 8L2 18l4 4 4-4a6 6 0 0 0 8-8l-4 4-4-4z"/>',
         'Elimina' => '<path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7M14 10v7"/>',
