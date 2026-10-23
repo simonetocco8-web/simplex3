@@ -60,6 +60,8 @@ function menuIcon(string $label): string
         'Enti di Certificazione' => '<circle cx="12" cy="8" r="6"/><path d="m9 8 2 2 4-4M8 13l-2 9 6-3 6 3-2-9"/>',
         'Amministrazione' => '<path d="m2 9 10-6 10 6H2zM4 21h16M6 9v9M12 9v9M18 9v9"/>',
         'Produzione' => '<path d="M3 3v18h18M7 17v-4M12 17V9M17 17V5"/>',
+        'Pro-Forma' => '<path d="M5 2h14v20l-3-2-4 2-4-2-3 2V2zM8 6h8M8 10h5"/>',
+        'Genera Fattura' => '<path d="M4 3h12v7M4 3v18h9M8 7h4M8 11h4M18 13v8M14 17h8"/>',
         'Fatture' => '<path d="M5 2h14v20l-3-2-4 2-4-2-3 2V2zM8 6h8M8 10h8M8 14h5"/>',
         'Pagamenti' => '<rect x="2" y="4" width="20" height="16" rx="2"/><path d="M2 9h20M6 15h4"/>',
         'Impostazioni' => '<circle cx="12" cy="12" r="3"/><path d="m9 3 1-1h4l1 3 3 1 3 1v4l-2 2-1 3-1 3h-4l-2-2-3-1-3-1v-4l2-2 1-3z"/>',

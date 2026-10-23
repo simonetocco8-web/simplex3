@@ -639,6 +639,7 @@ renderHeader('Simplex - Offerte');
                     </a>
                     <ul class="nav flex-column ms-3 collapse" id="menuAmministrazione">
                         <li class="nav-item"><a class="nav-link" href="amministrazione_produzione.php"><?= menuIcon('Produzione') ?> Produzione</a></li>
+                        <li class="nav-item"><a class="nav-link" href="proforme.php"><?= menuIcon('Pro-Forma') ?> Pro-Forma</a></li>
                         <li class="nav-item"><a class="nav-link" href="fatture.php"><?= menuIcon('Fatture') ?> Fatture</a></li>
                         <li class="nav-item"><a class="nav-link" href="pagamenti.php"><?= menuIcon('Pagamenti') ?> Pagamenti</a></li>
                     </ul>
@@ -1133,4 +1134,5 @@ if(tabellaMomentiOfferta&&btnAggiungiMomentoOfferta){
     });
 }
 </script>
+<script src="assets/js/company-autocomplete.js"></script>
 <?php renderFooter(); ?>

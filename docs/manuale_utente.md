@@ -40,6 +40,7 @@ Il menù laterale è organizzato in:
   - Enti di Certificazione
 - **Amministrazione** (a tendina):
   - Produzione
+  - Pro-Forma
   - Fatture
   - Pagamenti
 
@@ -100,12 +101,19 @@ Per ogni commessa puoi inserire momenti con:
 - Ore studio
 - Data prevista
 
-### 7.3 Generazione automatica fattura
-Quando crei un momento con tipologia **Chiusura**, il sistema genera automaticamente una fattura con:
-- Numero formato `ID_UNIVOCO/ANNO_CORRENTE`
-- Importo calcolato dal totale del momento di lavorazione
+### 7.3 Completamento e Pro-Forma
+Nel dettaglio della commessa, **Imposta Completato e genera Pro-Forma** completa tutti i momenti e genera una sola Pro-Forma riepilogativa. Anche completando i singoli momenti, il documento viene emesso quando tutti risultano completati. Il completamento non genera più una fattura.
 
-Nella tabella dei momenti è presente l'icona per aprire la fattura collegata.
+La Pro-Forma riporta i dati dell'azienda e i momenti della commessa, con gli importi già usati per la fatturazione. Questi dati vengono conservati all'emissione; modifiche successive all'anagrafica non cambiano il documento. Le fatture precedentemente emesse restano conservate e impediscono una seconda emissione automatica per la stessa commessa.
+
+### 7.4 Pro-Forma e accrediti
+Da **Amministrazione → Pro-Forma** puoi consultare i documenti e registrare accrediti con data e importo. Un accredito inferiore al residuo è un acconto; quando il totale degli accrediti raggiunge esattamente l'importo della Pro-Forma, il documento è saldato. Non è possibile superare il residuo.
+
+- Verde: Pro-Forma interamente pagata.
+- Giallo: pagamento parziale, anche oltre i 30 giorni.
+- Rosso: almeno 30 giorni dall'emissione e nessun accredito.
+
+Per le sole Pro-Forma rosse compare **Genera Fattura**: crea una singola fattura con gli stessi dati azienda, momenti e importo, consultabile in **Fatture**. Gli eventuali accrediti successivi si registrano dalla Pro-Forma collegata e aggiornano anche lo stato di pagamento della fattura.
 
 ## 8. Fatture
 La sezione **Fatture** contiene:
@@ -113,7 +121,7 @@ La sezione **Fatture** contiene:
 - Filtri di ricerca
 - Dettaglio della singola fattura
 
-Per ogni fattura è disponibile l'icona **banconota** per registrare il pagamento.
+Per le fatture precedenti è disponibile l'icona **banconota** per registrare il pagamento. Per quelle generate da Pro-Forma, il collegamento **Accrediti** porta al documento di origine.
 
 ### 8.1 Registrazione pagamento da fattura
 Cliccando l'icona banconota si apre un popup con:
@@ -156,7 +164,8 @@ Per ogni file sono disponibili:
 ## 13. Risoluzione problemi comuni
 - **Credenziali non valide**: verificare username/password o usare recupero credenziali.
 - **Campi non salvati**: controllare i messaggi di errore in pagina.
-- **Fattura non generata**: verificare che il momento sia di tipo **Chiusura**.
+- **Pro-Forma non generata**: completare la commessa o tutti i suoi momenti; verificare che non siano già presenti fatture.
+- **Genera Fattura non disponibile**: sono richiesti almeno 30 giorni dall’emissione e nessun accredito sulla Pro-Forma.
 - **Pagamento non visibile**: verificare conferma popup e filtri attivi.
 
 ## 14. Supporto
