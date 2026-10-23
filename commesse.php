@@ -2,6 +2,7 @@
 require_once __DIR__ . '/config/database.php';
 require_once __DIR__ . '/includes/layout.php';
 require_once __DIR__ . '/includes/auth.php';
+require_once __DIR__ . '/includes/consuntivo.php';
 
 if (!isLoggedIn()) {
     header('Location: login.php');
@@ -116,6 +117,13 @@ if (!(bool)$pdo->query("SHOW COLUMNS FROM offerta_momenti_lavorazione LIKE 'cost
     $pdo->exec("ALTER TABLE offerta_momenti_lavorazione ADD COLUMN costo_totale DECIMAL(12,2) NOT NULL DEFAULT 0 AFTER valore_giornaliero_uomo");
 }
 
+ensureConsuntivoSchema($pdo);
+if (empty($_SESSION['csrf_consuntivo'])) {
+    $_SESSION['csrf_consuntivo'] = bin2hex(random_bytes(32));
+}
+$consuntivi = [];
+$consuntiviInput = [];
+
 $errors = [];
 $success = null;
 $editId = isset($_GET['edit']) ? (int) $_GET['edit'] : 0;
@@ -143,6 +151,53 @@ if ($editId > 0) {
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $azione = $_POST['azione'] ?? '';
+
+    if ($azione === 'save_consuntivi') {
+        if (!hash_equals($_SESSION['csrf_consuntivo'], (string)($_POST['csrf_token'] ?? ''))) {
+            http_response_code(403);
+            exit('Richiesta non valida.');
+        }
+        $id = (int)($_POST['id'] ?? 0);
+        $consuntiviInput = $_POST['consuntivi'] ?? [];
+        if (!$commessaInModifica || $id !== $editId || !is_array($consuntiviInput) || !$consuntiviInput) {
+            $errors[] = 'Commessa o momenti a consuntivo non validi.';
+            $consuntiviInput = [];
+        } else {
+            $stmtOwned = $pdo->prepare('SELECT id FROM commessa_momenti_lavorazione WHERE commessa_id = :id');
+            $stmtOwned->execute([':id' => $id]);
+            $ownedIds = array_map('intval', $stmtOwned->fetchAll(PDO::FETCH_COLUMN));
+            $validated = [];
+            foreach ($consuntiviInput as $momentoId => $input) {
+                if (!ctype_digit((string)$momentoId) || !in_array((int)$momentoId, $ownedIds, true) || !is_array($input)) {
+                    $errors[] = 'Il momento a consuntivo non appartiene a questa commessa.';
+                    continue;
+                }
+                [$values, $rowErrors] = validateConsuntivo($input);
+                foreach ($rowErrors as $error) $errors[] = 'Momento #' . (int)$momentoId . ': ' . $error;
+                $validated[(int)$momentoId] = $values;
+            }
+            if (!$errors) {
+                $fields = consuntivoFields();
+                $columns = implode(', ', $fields);
+                $placeholders = ':' . implode(', :', $fields);
+                $updates = implode(', ', array_map(fn($field) => "$field = VALUES($field)", $fields));
+                $pdo->beginTransaction();
+                try {
+                    $stmtSave = $pdo->prepare("INSERT INTO commessa_momenti_consuntivo (momento_id, $columns)
+                        VALUES (:momento_id, $placeholders) ON DUPLICATE KEY UPDATE $updates");
+                    foreach ($validated as $momentoId => $values) {
+                        $stmtSave->execute(['momento_id' => $momentoId] + $values);
+                    }
+                    $pdo->commit();
+                    $success = 'Momenti a consuntivo salvati correttamente.';
+                    $consuntiviInput = [];
+                } catch (PDOException $e) {
+                    if ($pdo->inTransaction()) $pdo->rollBack();
+                    $errors[] = 'Impossibile salvare i momenti a consuntivo.';
+                }
+            }
+        }
+    }
 
     if ($azione === 'upload_file') {
         $id = (int) ($_POST['id'] ?? 0);
@@ -266,6 +321,18 @@ if ($editId > 0) {
         $stmtMomenti = $pdo->prepare('SELECT * FROM commessa_momenti_lavorazione WHERE commessa_id = :commessa_id ORDER BY data_momento DESC, id DESC');
         $stmtMomenti->execute([':commessa_id' => $editId]);
         $momentiCommessa = $stmtMomenti->fetchAll();
+
+        // Seed each actual row once; subsequent visits preserve the recorded actual values.
+        $fields = implode(', ', consuntivoFields());
+        $pdo->prepare("INSERT INTO commessa_momenti_consuntivo (momento_id, $fields)
+            SELECT id, $fields FROM commessa_momenti_lavorazione WHERE commessa_id = :id
+            ON DUPLICATE KEY UPDATE momento_id = VALUES(momento_id)")->execute([':id' => $editId]);
+        $stmtConsuntivi = $pdo->prepare('SELECT a.* FROM commessa_momenti_consuntivo a
+            JOIN commessa_momenti_lavorazione m ON m.id = a.momento_id WHERE m.commessa_id = :id');
+        $stmtConsuntivi->execute([':id' => $editId]);
+        foreach ($stmtConsuntivi->fetchAll() as $consuntivo) {
+            $consuntivi[(int)$consuntivo['momento_id']] = $consuntivo;
+        }
 
         foreach ($momentiCommessa as $momento) {
             $valoreG = (float) $momento['valore_giornaliero_uomo'];
@@ -461,6 +528,8 @@ renderHeader('Simplex - Commesse');
                         € <?= number_format($totaleMomentiEuro, 2, ',', '.') ?>
                     </div>
                 </div>
+
+                <?php require __DIR__ . '/includes/consuntivo_form.php'; ?>
 
                 <div class="card mb-4">
                     <div class="card-header">File della commessa</div>

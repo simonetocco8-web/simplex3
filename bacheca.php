@@ -164,20 +164,6 @@ if ($isAdminOrArea && (bool) $pdo->query("SHOW TABLES LIKE 'commesse'")->fetchCo
     $commesseDaAssegnare = $stmtDaAssegnare->fetchAll();
 }
 
-$offerteScadenza = [];
-if ($isAdminOrArea && (bool) $pdo->query("SHOW TABLES LIKE 'offerte'")->fetchColumn()) {
-    $offerteScadenza = $pdo->query(
-        "SELECT o.id, o.protocollo, o.servizio, o.stato, o.data_offerta, o.data_scadenza, o.validita_giorni,
-                a.ragione_sociale AS azienda_nome,
-                c.id AS commessa_id, c.protocollo AS commessa_protocollo
-         FROM offerte o
-         LEFT JOIN aziende a ON a.id = o.azienda_id
-         LEFT JOIN commesse c ON c.offerta_id = o.id
-         WHERE o.stato = 'Aggiudicata'
-         ORDER BY (o.data_scadenza IS NULL), o.data_scadenza ASC, o.id DESC"
-    )->fetchAll();
-}
-
 renderHeader('Simplex - Bacheca');
 ?>
 <div class="container-fluid">
@@ -314,51 +300,6 @@ renderHeader('Simplex - Bacheca');
                                     <td><?= htmlspecialchars($commessa['servizio'] ?? '-') ?></td>
                                     <td><?= htmlspecialchars($commessa['stato'] ?? '-') ?></td>
                                     <td><?= htmlspecialchars(formatDateIt($commessa['creata_il'] ?? null)) ?></td>
-                                </tr>
-                            <?php endforeach; ?>
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-            <?php endif; ?>
-
-            <?php if ($isAdminOrArea): ?>
-                <div class="card mb-4">
-                    <div class="card-header">Offerte ordinate per data di scadenza crescente</div>
-                    <div class="table-responsive">
-                        <table class="table table-striped table-hover mb-0 align-middle">
-                            <thead class="table-light">
-                            <tr>
-                                <th>Prot. Offerta</th>
-                                <th>Prot. Commessa</th>
-                                <th>Azienda</th>
-                                <th>Servizio</th>
-                                <th>Stato</th>
-                                <th>Data Offerta</th>
-                                <th>Data Scadenza</th>
-                                <th>Validità (gg)</th>
-                            </tr>
-                            </thead>
-                            <tbody>
-                            <?php if (!$offerteScadenza): ?>
-                                <tr><td colspan="8" class="text-center text-muted py-4">Nessuna offerta presente.</td></tr>
-                            <?php endif; ?>
-                            <?php foreach ($offerteScadenza as $offerta): ?>
-                                <tr>
-                                    <td><a href="offerte.php?view=<?= (int)$offerta['id'] ?>"><?= htmlspecialchars($offerta['protocollo']) ?></a></td>
-                                    <td>
-                                        <?php if (!empty($offerta['commessa_id'])): ?>
-                                            <a href="commesse.php?edit=<?= (int)$offerta['commessa_id'] ?>"><?= htmlspecialchars($offerta['commessa_protocollo'] ?? '-') ?></a>
-                                        <?php else: ?>
-                                            -
-                                        <?php endif; ?>
-                                    </td>
-                                    <td><?= htmlspecialchars($offerta['azienda_nome'] ?? '-') ?></td>
-                                    <td><?= htmlspecialchars($offerta['servizio']) ?></td>
-                                    <td><?= htmlspecialchars($offerta['stato']) ?></td>
-                                    <td><?= htmlspecialchars(formatDateIt($offerta['data_offerta'] ?? null)) ?></td>
-                                    <td><?= htmlspecialchars(formatDateIt($offerta['data_scadenza'] ?? null)) ?></td>
-                                    <td><?= htmlspecialchars((string)($offerta['validita_giorni'] ?? '-')) ?></td>
                                 </tr>
                             <?php endforeach; ?>
                             </tbody>
