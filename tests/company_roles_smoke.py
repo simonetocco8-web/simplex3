@@ -90,6 +90,10 @@ class CompanyRolesSmoke(unittest.TestCase):
 
     @classmethod
     def cleanup(cls):
+        company_ids = f"SELECT id FROM aziende WHERE ragione_sociale LIKE '{cls.prefix}%'"
+        offer_ids = f"SELECT id FROM offerte WHERE azienda_id IN ({company_ids})"
+        cls.sql(f"DELETE FROM commesse WHERE offerta_id IN ({offer_ids})")
+        cls.sql(f"DELETE FROM offerte WHERE azienda_id IN ({company_ids})")
         cls.sql(f"DELETE FROM aziende WHERE ragione_sociale LIKE '{cls.prefix}%'")
         cls.sql(f"DELETE FROM utenti WHERE nome_utente LIKE '{cls.prefix}%'")
 
@@ -206,6 +210,134 @@ class CompanyRolesSmoke(unittest.TestCase):
                 for link in links:
                     self.assertIn('<svg class="menu-icon"', link)
                     self.assertIn('aria-hidden="true"', link)
+
+
+    def quick_company(self, **overrides):
+        data = self.company_data()
+        data.update(azione='ajax_create_azienda')
+        data.update(overrides)
+        result = json.loads(self.request('offerte.php?action=new', data))
+        return data, result
+
+    def offer_data(self, company_id):
+        return {
+            'azione': 'save', 'id': '0', 'azienda_id': str(company_id),
+            'servizio': 'SICUREZZA', 'dettaglio_servizio': 'DVR (D. Lgs. 81/2008)',
+            'stato': 'In Elaborazione', 'rco_utente_id': self.users['admin'],
+            'data_offerta': '2026-10-23', 'validita_giorni': '30', 'data_scadenza': '',
+            'modalita_pagamento': 'Bonifico Bancario f.m.v.f', 'sconto_percentuale': '0',
+            'momento_data_momento[]': ['2026-11-01'],
+            'momento_tipologia[]': ['Verifica personalizzata'],
+            'momento_valore_giornaliero_uomo[]': ['100'], 'momento_costo_totale[]': ['200'],
+        }
+
+    def test_offer_company_popup(self):
+        body = self.request('offerte.php?action=new')
+        popup = body[body.index('id="modalNuovaAzienda"'):]
+        form = Form(popup).selects
+        self.assertIn('Settore di Attività', popup)
+        self.assertIn('RCO', popup)
+        self.assertIn('Edilizia', form['categoria'])
+        self.assertEqual(set(form['rco_utente_id']), {''} | {self.users[k] for k in ('admin', 'area', 'consulente', 'misto')})
+        data, result = self.quick_company()
+        self.assertTrue(result['ok'], result)
+        stored = json.loads(self.sql("SELECT JSON_OBJECT('rco',rco_utente_id,'categoria',categoria) "
+                                     f"FROM aziende WHERE id={result['id']}"))
+        self.assertEqual(str(stored['rco']), data['rco_utente_id'])
+        self.assertEqual(stored['categoria'], 'Servizi')
+        _, invalid = self.quick_company(rco_utente_id=self.users['tecnico'])
+        self.assertFalse(invalid['ok'])
+        self.assertIn('RCO non valido.', invalid['errors'])
+
+    def test_duplicate_identifiers_between_flows(self):
+        fiscal = str(secrets.randbelow(10**11)).zfill(11)
+        data = self.company_data()
+        data.update(partita_iva='', codice_fiscale=fiscal)
+        body = self.request('aziende.php?action=new', data)
+        self.assertIn('Azienda creata correttamente.', body)
+        _, duplicate = self.quick_company(partita_iva='', codice_fiscale=fiscal)
+        self.assertFalse(duplicate['ok'])
+        self.assertIn('già censita a sistema', duplicate['errors'][0])
+        fiscal2 = 'ABCDEF' + secrets.token_hex(5).upper()
+        quick, created = self.quick_company(partita_iva='', codice_fiscale=fiscal2.lower())
+        self.assertTrue(created['ok'], created)
+        self.assertEqual(self.sql(f"SELECT codice_fiscale FROM aziende WHERE id={created['id']}"), fiscal2)
+        other = self.company_data()
+        other.update(partita_iva='', codice_fiscale=fiscal2)
+        self.assertIn('già censita a sistema', self.request('aziende.php?action=new', other))
+        quick, created = self.quick_company()
+        self.assertTrue(created['ok'], created)
+        other = self.company_data()
+        other['partita_iva'] = quick['partita_iva']
+        self.assertIn('già censita a sistema', self.request('aziende.php?action=new', other))
+        _, duplicate = self.quick_company(partita_iva=quick['partita_iva'])
+        self.assertFalse(duplicate['ok'])
+        self.assertIn('già censita a sistema', duplicate['errors'][0])
+        _, missing = self.quick_company(partita_iva='', codice_fiscale='')
+        self.assertFalse(missing['ok'])
+        self.assertIn('Codice Fiscale', missing['errors'][0])
+
+    def test_offer_dates_typology_and_actions(self):
+        body = self.request('offerte.php?action=new')
+        self.assertNotIn('Filtri Offerte', body)
+        self.assertNotIn('Elenco Offerte', body)
+        self.assertNotIn('name="segnalato_da_utente_id"', body)
+        self.assertIn('Promotore/Segnalatore', body)
+        for name in ('data_offerta', 'data_scadenza', 'momento_data_momento[]'):
+            tag = re.search(r'<input[^>]*name="' + re.escape(name) + r'"[^>]*>', body).group()
+            self.assertIn('type="date"', tag)
+        self.assertIn('list="tipologie-momento"', body)
+        # Check JS syntax, dynamically added row markup, and expiry calculation across DST.
+        script = re.findall(r'<script>(.*?)</script>', body, re.S)[-1]
+        subprocess.run(['node', '-e', 'new Function(' + json.dumps(script) + ')'], check=True)
+        dates = script[script.index('function parseDate('):script.index('if(dataOff&&valIn&&scadIn)')]
+        subprocess.run(['node', '-e', dates + "const assert=require('node:assert/strict');"
+                        "assert.equal(addDays('2026-10-23',30),'2026-11-22');"
+                        "assert.equal(daysBetween('2026-10-23','2026-11-22'),30);"
+                        "assert.equal(addDays('2028-02-28',1),'2028-02-29');"], check=True)
+        row_literal = re.search(r"tr.innerHTML=('.*?');", script).group(1)
+        dynamic = subprocess.check_output(['node', '-e', 'console.log(' + row_literal + ')'], text=True)
+        self.assertIn('type="date"', dynamic)
+        self.assertIn('list="tipologie-momento"', dynamic)
+        data, company = self.quick_company()
+        self.assertTrue(company['ok'], company)
+        offer = self.offer_data(company['id'])
+        response = self.request('offerte.php?action=new', offer)
+        self.assertIn('Offerta creata correttamente', response)
+        row = json.loads(self.sql("SELECT JSON_OBJECT('id',id,'date',data_offerta,'expiry',data_scadenza) "
+                                  f"FROM offerte WHERE azienda_id={company['id']}"))
+        self.assertEqual(row['date'], '2026-10-23')
+        self.assertEqual(row['expiry'], '2026-11-22')
+        self.assertEqual(self.sql(f"SELECT tipologia FROM offerta_momenti_lavorazione WHERE offerta_id={row['id']}"),
+                         'Verifica personalizzata')
+        edit = self.request('offerte.php?edit=' + str(row['id']))
+        self.assertIn('value="2026-10-23"', edit)
+        self.assertIn('value="Verifica personalizzata"', edit)
+        listing = self.request('offerte.php')
+        self.assertIn('Filtri Offerte', listing)
+        for label in ('Modifica', 'Lavorazioni', 'Elimina'):
+            self.assertRegex(listing, 'aria-label="' + label + '"><svg')
+        # Awarding an existing offer must copy the custom typology into its job.
+        offer.update(id=str(row['id']), stato='Aggiudicata', responsabile_area_utente_id=self.users['area'])
+        self.assertIn('Offerta aggiornata correttamente', self.request('offerte.php?edit=' + str(row['id']), offer))
+        self.assertEqual(self.sql("SELECT m.tipologia FROM commessa_momenti_lavorazione m "
+                                  "JOIN commesse c ON c.id=m.commessa_id "
+                                  f"WHERE c.offerta_id={row['id']}"), 'Verifica personalizzata')
+
+    def test_offer_rejects_invalid_date_or_typology(self):
+        _, company = self.quick_company()
+        for field, value, message in [
+            ('data_offerta', '2026-02-30', 'Data Offerta obbligatoria e non valida'),
+            ('momento_data_momento[]', ['2026-02-30'], 'Data del momento di lavorazione non valida'),
+            ('momento_tipologia[]', ['x' * 121], 'Tipologia obbligatoria e massimo 120 caratteri'),
+        ]:
+            with self.subTest(field=field):
+                data = self.offer_data(company['id'])
+                data[field] = value
+                body = self.request('offerte.php?action=new', data)
+                self.assertIn(message, body)
+                self.assertNotIn('Elenco Offerte', body)
+                self.assertEqual(self.sql(f"SELECT COUNT(*) FROM offerte WHERE azienda_id={company['id']}"), '0')
 
 
 if __name__ == '__main__':
