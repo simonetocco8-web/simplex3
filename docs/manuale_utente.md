@@ -144,10 +144,14 @@ La sezione **Pagamenti** mostra tutti i pagamenti registrati con:
 Sono disponibili filtri per ricercare pagamenti specifici.
 
 ## 10. Produzione (Amministrazione)
-La sezione **Produzione** permette una vista amministrativa delle commesse:
-- Elenco commesse
-- Filtri per campi caratteristici
-- Totale budget in euro delle righe visualizzate
+La sezione **Produzione** riepiloga per utente:
+- **Carico di Lavoro**: numero di commesse assegnate ancora aperte.
+- **Commesse gestite**: numero di commesse assegnate, aperte e chiuse.
+- **Importo**: somma dei totali delle offerte collegate, al netto dello sconto, delle commesse gestite.
+
+I filtri **Oggi**, **Ieri**, **Ultimi 7 Giorni**, **Mese Corrente**, **Anno Corrente** e **Dall'inizio** si riferiscono alla data di creazione della commessa nel fuso Europe/Rome. Gli ultimi sette giorni comprendono oggi e i sei giorni precedenti. Sono disponibili anche **Servizio** e **Servizio Specifico**, combinabili con il periodo.
+
+Sono visibili anche gli utenti senza carico nel periodo. Le commesse non assegnate o con un vecchio nominativo non identificabile univocamente sono segnalate separatamente ed escluse dai totali per utente.
 
 ## 11. Allegati commessa
 Nella commessa puoi caricare allegati.

@@ -861,6 +861,120 @@ new Function('document', SCRIPT)(document);
         for date in ('23/10/2026', '22/11/2026', '01/11/2026'):
             self.assertIn('value="' + date + '"', edit)
 
+    def production_fixture(self, specific, user='consulente', closed=False, discount='0', service='SICUREZZA'):
+        _, company = self.quick_company()
+        data = self.offer_data(company['id'])
+        data['sconto_percentuale'] = discount
+        self.request('offerte.php?action=new', data)
+        offer_id = self.sql(f"SELECT id FROM offerte WHERE azienda_id={company['id']}")
+        job_id = self.sql(f'SELECT id FROM commesse WHERE offerta_id={offer_id}')
+        self.sql(f"UPDATE offerte SET dettaglio_servizio='{specific}',servizio='{service}' WHERE id={offer_id}")
+        if user:
+            self.sql(f"UPDATE commesse SET consulente_utente_id={self.users[user]},consulente_nome='{user} {self.prefix}',stato='{'Completato' if closed else 'In corso'}' WHERE id={job_id}")
+        return job_id, offer_id
+
+    def production_metrics(self, query, user='consulente'):
+        page = self.request('amministrazione_produzione.php?' + urllib.parse.urlencode(query))
+        row = re.search(r'<tr data-utente-id="' + self.users[user] + r'">.*?</tr>', page, re.S).group()
+        values = dict(re.findall(r'data-metric="([^"]+)">([^<]+)</td>', row))
+        return values, page
+
+    def test_production_workload_amounts_and_service_filters(self):
+        specific = self.prefix + 'report'
+        a, offer_a = self.production_fixture(specific, discount='10')
+        b, _ = self.production_fixture(specific, closed=True)
+        c, offer_c = self.production_fixture(specific, user='misto')
+        legacy, _ = self.production_fixture(specific, user='misto')
+        unassigned, _ = self.production_fixture(specific, user=None)
+        self.sql(f"UPDATE commesse SET consulente_utente_id=NULL WHERE id={legacy}")
+        self.sql(f"UPDATE offerta_momenti_lavorazione SET costo_totale=40 WHERE offerta_id={offer_c}")
+        # Multiple moments must not multiply the job count.
+        self.sql("INSERT INTO offerta_momenti_lavorazione (offerta_id,data_momento,tipologia,valore_giornaliero_uomo,costo_totale) "
+                 f"VALUES ({offer_a},'2026-11-02','Verifica',100,50)")
+        query = {'f_periodo':'tutto', 'f_servizio':'SICUREZZA', 'f_servizio_specifico':specific}
+        values, page = self.production_metrics(query)
+        self.assertEqual(values, {'carico':'1','gestite':'2','importo':'€ 425,00'})
+        values, _ = self.production_metrics(query, user='misto')
+        self.assertEqual(values, {'carico':'2','gestite':'2','importo':'€ 240,00'})
+        values, _ = self.production_metrics(query, user='tecnico')
+        self.assertEqual(values, {'carico':'0','gestite':'0','importo':'€ 0,00'})
+        self.assertIn('Commesse senza utente identificabile: 1', page)
+        self.assertIn('€ 665,00', page)
+        self.assertIn('data di creazione della commessa', page)
+        other = self.prefix + 'specifico-altro'
+        self.production_fixture(other, service='ALTRE CONSULENZE')
+        values, page = self.production_metrics({'f_servizio':'ALTRE CONSULENZE','f_servizio_specifico':other})
+        self.assertEqual(values['gestite'], '1')
+        self.assertIn(other, Form(page).selects['f_servizio_specifico'])
+        self.assertNotIn(specific, Form(page).selects['f_servizio_specifico'])
+        values, _ = self.production_metrics({'f_servizio':'ALTRE CONSULENZE','f_servizio_specifico':specific})
+        self.assertEqual(values['gestite'], '0')
+        # Name-only historical records must not count against both homonyms.
+        try:
+            self.sql(f"UPDATE utenti SET nome='misto',cognome='{self.prefix}' WHERE id={self.users['tecnico']}")
+            values, page = self.production_metrics(query, user='misto')
+            self.assertEqual(values['gestite'], '1')
+            self.assertIn('Commesse senza utente identificabile: 2', page)
+        finally:
+            self.sql(f"UPDATE utenti SET nome='tecnico',cognome='{self.prefix}' WHERE id={self.users['tecnico']}")
+
+    def test_production_excludes_deleted_jobs(self):
+        job_id, offer_id = self.production_fixture(self.prefix + 'orphan')
+        try:
+            before, _ = self.production_metrics({'f_periodo':'tutto'})
+            self.sql(f'DELETE FROM offerte WHERE id={offer_id}')
+            after, _ = self.production_metrics({'f_periodo':'tutto'})
+            self.assertEqual(self.sql(f'SELECT COUNT(*) FROM commesse WHERE id={job_id}'), '0')
+            self.assertEqual(int(after['carico']), int(before['carico']) - 1)
+            self.assertEqual(int(after['gestite']), int(before['gestite']) - 1)
+        finally:
+            self.sql(f'DELETE FROM commesse WHERE id={job_id}')
+
+    def test_production_period_filters_and_italian_calendar(self):
+        import datetime
+        from zoneinfo import ZoneInfo
+        today = datetime.datetime.now(ZoneInfo('Europe/Rome')).date()
+        utc = datetime.timezone.utc
+        dates = [today, today-datetime.timedelta(days=1), today-datetime.timedelta(days=6),
+                 today-datetime.timedelta(days=7), today.replace(day=1), today.replace(month=1,day=1),
+                 today.replace(month=1,day=1)-datetime.timedelta(days=1)]
+        specific = self.prefix + 'periodo'
+        for day in dates:
+            job_id, _ = self.production_fixture(specific)
+            instant = datetime.datetime.combine(day, datetime.time(12), ZoneInfo('Europe/Rome')).astimezone(utc)
+            self.sql(f"UPDATE commesse SET creata_il='{instant.strftime('%Y-%m-%d %H:%M:%S')}' WHERE id={job_id}")
+        expected = {
+            'oggi': sum(day==today for day in dates),
+            'ieri': sum(day==today-datetime.timedelta(days=1) for day in dates),
+            '7_giorni': sum(today-datetime.timedelta(days=6)<=day<=today for day in dates),
+            'mese': sum(day.year==today.year and day.month==today.month for day in dates),
+            'anno': sum(day.year==today.year for day in dates), 'tutto':len(dates),
+        }
+        for period, count in expected.items():
+            with self.subTest(period=period):
+                values, page = self.production_metrics({'f_periodo':period,'f_servizio_specifico':specific})
+                self.assertEqual(int(values['carico']),count)
+                self.assertEqual(int(values['gestite']),count)
+                self.assertTrue(Form(page).selects['f_periodo'][period])
+        # Explicit boundary checks include the 23-hour DST transition day and year rollover.
+        code = r"""
+require '/app/includes/production.php';
+$cases = [
+ ['oggi','2026-03-29 12:00:00',['2026-03-28 23:00:00','2026-03-29 22:00:00']],
+ ['ieri','2026-03-30 12:00:00',['2026-03-28 23:00:00','2026-03-29 22:00:00']],
+ ['7_giorni','2026-01-01 12:00:00',['2025-12-25 23:00:00','2026-01-01 23:00:00']],
+ ['mese','2026-03-29 12:00:00',['2026-02-28 23:00:00','2026-03-31 22:00:00']],
+ ['anno','2026-01-01 12:00:00',['2025-12-31 23:00:00','2026-12-31 23:00:00']],
+ ['tutto','2026-01-01 12:00:00',[null,null]],
+];
+foreach ($cases as [$period,$now,$expected]) {
+ if (productionPeriodBounds($period,new DateTimeImmutable($now,new DateTimeZone('Europe/Rome'))) !== $expected) {
+  fwrite(STDERR,'Wrong boundaries: '.$period); exit(1);
+ }
+}
+"""
+        subprocess.run(['docker','exec','simplex3-web','php','-r',code],check=True)
+
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)
