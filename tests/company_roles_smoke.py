@@ -454,6 +454,142 @@ assert.equal(elements.testoNoteOfferta.textContent,'<b>Nota</b>');
         self.assertNotIn('js-note-offerta', row)
         self.assertIn('€ 200,00', row)
 
+    def create_consuntivo_job(self):
+        _, company = self.quick_company()
+        offer = self.offer_data(company['id'])
+        offer['momento_data_momento[]'] = ['2026-11-01', '2026-11-02']
+        offer['momento_tipologia[]'] = ['Apertura', 'Verifica personalizzata']
+        offer['momento_valore_giornaliero_uomo[]'] = ['100', '50']
+        offer['momento_costo_totale[]'] = ['200', '50']
+        self.assertIn('Offerta creata correttamente', self.request('offerte.php?action=new', offer))
+        offer_id = self.sql(f"SELECT id FROM offerte WHERE azienda_id={company['id']}")
+        job_id = self.sql(f'SELECT id FROM commesse WHERE offerta_id={offer_id}')
+        page = self.request('commesse.php?edit=' + job_id)
+        rows = json.loads(self.sql("SELECT JSON_ARRAYAGG(JSON_OBJECT('id',id,'data_momento',data_momento,"
+                                   "'tipologia',tipologia,'valore_giornaliero_uomo',valore_giornaliero_uomo,"
+                                   "'costo_totale',costo_totale,'ore',ore,'giorni',giorni,"
+                                   "'numero_incontri',numero_incontri,'ore_studio',ore_studio,'data_prevista',data_prevista)) "
+                                   f'FROM commessa_momenti_lavorazione WHERE commessa_id={job_id}'))
+        rows.sort(key=lambda row: row['id'])
+        token = re.search(r'name="csrf_token" value="([^"]+)"', page).group(1)
+        return job_id, offer_id, rows, token, page
+
+    def consuntivo_payload(self, job_id, token, rows):
+        data = {'azione': 'save_consuntivi', 'id': job_id, 'csrf_token': token}
+        for row in rows:
+            for field, value in row.items():
+                if field != 'id':
+                    data[f"consuntivi[{row['id']}][{field}]"] = '' if value is None else str(value)
+        return data
+
+    def test_consuntivo_inheritance_and_idempotency(self):
+        job_id, _, rows, _, page = self.create_consuntivo_job()
+        self.assertIn('Momenti a Consuntivo', page)
+        self.assertIn('preventivo − consuntivo', page)
+        self.assertIn('id="consuntivo-differenza" class="text-body-secondary">€ 0,00', page)
+        for row in rows:
+            match = self.sql("SELECT COUNT(*) FROM commessa_momenti_consuntivo a "
+                             "JOIN commessa_momenti_lavorazione p ON p.id=a.momento_id "
+                             f"WHERE p.id={row['id']} AND a.costo_totale=p.costo_totale "
+                             "AND a.valore_giornaliero_uomo=p.valore_giornaliero_uomo AND a.giorni=p.giorni AND a.ore=p.ore")
+            self.assertEqual(match, '1')
+        self.request('commesse.php?edit=' + job_id)
+        self.request('commesse.php?edit=' + job_id)
+        self.assertEqual(self.sql('SELECT COUNT(*) FROM commessa_momenti_consuntivo a '
+                                  'JOIN commessa_momenti_lavorazione p ON p.id=a.momento_id '
+                                  f'WHERE p.commessa_id={job_id}'), '2')
+        self.assertNotIn('Offerte ordinate per data di scadenza crescente', self.request('bacheca.php'))
+
+    def test_consuntivo_save_differences_and_preserve_forecast(self):
+        job_id, offer_id, rows, token, _ = self.create_consuntivo_job()
+        forecast = self.sql(f'SELECT * FROM commessa_momenti_lavorazione WHERE commessa_id={job_id} ORDER BY id')
+        offer_forecast = self.sql(f'SELECT * FROM offerta_momenti_lavorazione WHERE offerta_id={offer_id} ORDER BY id')
+        data = self.consuntivo_payload(job_id, token, rows)
+        first, second = rows[0]['id'], rows[1]['id']
+        data.update({f'consuntivi[{first}][costo_totale]': '150',
+                     f'consuntivi[{second}][costo_totale]': '80',
+                     f'consuntivi[{first}][valore_giornaliero_uomo]': '12,50',
+                     f'consuntivi[{first}][ore]': '1.25', f'consuntivi[{first}][giorni]': '3.5',
+                     f'consuntivi[{first}][numero_incontri]': '4', f'consuntivi[{first}][ore_studio]': '02:30',
+                     f'consuntivi[{first}][data_prevista]': '2026-12-01', f'consuntivi[{first}][tipologia]': 'Attività effettiva'})
+        page = self.request('commesse.php?edit=' + job_id, data)
+        self.assertIn('Momenti a consuntivo salvati correttamente.', page)
+        self.assertIn('id="consuntivo-totale">€ 230,00', page)
+        self.assertIn('id="consuntivo-differenza" class="text-success">€ +20,00', page)
+        self.assertRegex(page, r'data-delta="costo_totale" data-planned="200.00" class="text-success">\+50,00')
+        self.assertRegex(page, r'data-delta="costo_totale" data-planned="50.00" class="text-danger">-30,00')
+        saved = json.loads(self.sql("SELECT JSON_OBJECT('valore',valore_giornaliero_uomo,'ore',ore,'giorni',giorni,"
+                                    "'incontri',numero_incontri,'studio',ore_studio,'data',data_prevista) "
+                                    f'FROM commessa_momenti_consuntivo WHERE momento_id={first}'))
+        self.assertEqual(float(saved['valore']), 12.5)
+        self.assertEqual(float(saved['ore']), 1.25)
+        self.assertEqual(float(saved['giorni']), 3.5)
+        self.assertEqual(saved['incontri'], 4)
+        self.assertEqual(saved['studio'], '02:30')
+        self.assertEqual(saved['data'], '2026-12-01')
+        reload = self.request('commesse.php?edit=' + job_id)
+        self.assertIn('value="Attività effettiva"', reload)
+        self.assertIn('id="consuntivo-totale">€ 230,00', reload)
+        data[f'consuntivi[{first}][costo_totale]'] = '240.01'
+        page = self.request('commesse.php?edit=' + job_id, data)
+        self.assertIn('id="consuntivo-differenza" class="text-danger">€ -70,01', page)
+        data[f'consuntivi[{first}][costo_totale]'] = '0'
+        data[f'consuntivi[{second}][costo_totale]'] = '0'
+        page = self.request('commesse.php?edit=' + job_id, data)
+        self.assertIn('id="consuntivo-totale">€ 0,00', page)
+        self.assertIn('id="consuntivo-differenza" class="text-success">€ +250,00', page)
+        self.assertEqual(self.sql(f'SELECT * FROM commessa_momenti_lavorazione WHERE commessa_id={job_id} ORDER BY id'), forecast)
+        self.assertEqual(self.sql(f'SELECT * FROM offerta_momenti_lavorazione WHERE offerta_id={offer_id} ORDER BY id'), offer_forecast)
+
+    def test_consuntivo_validation_and_ownership(self):
+        import urllib.error
+        job_id, _, rows, token, _ = self.create_consuntivo_job()
+        first = rows[0]['id']
+        baseline = self.sql(f'SELECT costo_totale FROM commessa_momenti_consuntivo WHERE momento_id={first}')
+        for field, value in [('costo_totale', '-1'), ('ore', '1.234'), ('giorni', '1000000'),
+                             ('numero_incontri', '1.5'), ('data_momento', '2026-02-30'), ('ore_studio', '02:99')]:
+            with self.subTest(field=field):
+                data = self.consuntivo_payload(job_id, token, rows)
+                data[f'consuntivi[{first}][{field}]'] = value
+                # A valid change in the other row must not be saved if any row is invalid.
+                data[f"consuntivi[{rows[1]['id']}][costo_totale]"] = '999'
+                page = self.request('commesse.php?edit=' + job_id, data)
+                self.assertNotIn('Momenti a consuntivo salvati correttamente.', page)
+                self.assertIn('alert alert-danger', page)
+                self.assertEqual(self.sql(f'SELECT costo_totale FROM commessa_momenti_consuntivo WHERE momento_id={first}'), baseline)
+                self.assertEqual(float(self.sql(f"SELECT costo_totale FROM commessa_momenti_consuntivo WHERE momento_id={rows[1]['id']}")), 50)
+        other_id, _, other_rows, _, _ = self.create_consuntivo_job()
+        data = self.consuntivo_payload(job_id, token, other_rows)
+        self.assertIn('non appartiene a questa commessa', self.request('commesse.php?edit=' + job_id, data))
+        data = self.consuntivo_payload(job_id, token, rows)
+        with self.assertRaises(urllib.error.HTTPError) as error:
+            self.request('commesse.php?edit=' + job_id, dict(data, csrf_token='bad'))
+        self.assertEqual(error.exception.code, 403)
+
+    def test_consuntivo_live_calculation(self):
+        _, _, _, _, page = self.create_consuntivo_job()
+        script = next(code for code in re.findall(r'<script>(.*?)</script>', page, re.S) if "document.getElementById('form-consuntivi')" in code)
+        node_test = r"""
+const assert=require('node:assert/strict');
+const fields={valore_giornaliero_uomo:{value:'20'},costo_totale:{value:'40'},ore:{value:'4'},giorni:{value:'2'},numero_incontri:{value:'0'}};
+const outputs=Object.keys(fields).map(field=>({dataset:{delta:field,planned:field==='costo_totale'?'100':'0'}}));
+const row={querySelectorAll(){return outputs;},querySelector(selector){return fields[/data-field="(.*?)"/.exec(selector)[1]];}};
+const form={events:{},querySelectorAll(){return [row];},addEventListener(name,fn){this.events[name]=fn;}};
+const elements={'form-consuntivi':form,'consuntivo-preventivo':{dataset:{cents:'10000'}},'consuntivo-totale':{},'consuntivo-differenza':{}};
+new Function('document', SCRIPT)({getElementById(id){return elements[id];}});
+assert.equal(elements['consuntivo-differenza'].className,'text-success');
+assert.equal(elements['consuntivo-differenza'].textContent,'€ +60,00');
+form.events.click({target:{closest(){return {closest(){return row;}};}}});
+assert.equal(fields.costo_totale.value,'50.00');
+assert.equal(elements['consuntivo-differenza'].textContent,'€ +50,00');
+fields.costo_totale.value='120.01';form.events.input();
+assert.equal(elements['consuntivo-differenza'].className,'text-danger');
+assert.equal(elements['consuntivo-differenza'].textContent,'€ -20,01');
+fields.costo_totale.value='100';form.events.input();
+assert.equal(elements['consuntivo-differenza'].className,'text-body-secondary');
+""".replace('SCRIPT', json.dumps(script))
+        subprocess.run(['node', '-e', node_test], check=True)
+
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)
