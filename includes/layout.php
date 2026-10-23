@@ -80,6 +80,28 @@ function menuIcon(string $label): string
         . $icons[$label] . '</svg>';
 }
 
+function currentMenuPage(): string
+{
+    $page = basename($_SERVER['SCRIPT_NAME'] ?? '');
+    return $page === 'lavorazioni.php' ? 'offerte.php' : $page;
+}
+
+function navAttributes(string $page): string
+{
+    return currentMenuPage() === $page
+        ? 'class="nav-link active" aria-current="page"'
+        : 'class="nav-link"';
+}
+
+function navGroupActive(string $group): bool
+{
+    $groups = [
+        'Anagrafiche' => ['utenti.php', 'aziende.php', 'enti_certificazione.php'],
+        'Amministrazione' => ['amministrazione_produzione.php', 'proforme.php', 'fatture.php', 'pagamenti.php'],
+    ];
+    return in_array(currentMenuPage(), $groups[$group] ?? [], true);
+}
+
 function renderHeader(string $title = 'Simplex'): void
 {
     ?>
