@@ -5,12 +5,12 @@ require_once __DIR__ . '/includes/auth.php';
 
 $TIPOLOGIE_AZIENDA = ['Promotore', 'Fornitore', 'Partner', 'Cliente'];
 $TIPI_SEDE = ['Legale', 'Amministrativa', 'Operativa'];
-$ORGANICO_OPTIONS = ['0-10', '10-50', '50-250', '250+'];
-$FATTURATO_OPTIONS = ['< 2 Mln', '< 10 Mln', '< 50 Mln', '> 50 Mln'];
+$ORGANICO_OPTIONS = ['0-10', '11-25', '26-50', '51-250', '>250', 'Sconosciuto'];
+$FATTURATO_OPTIONS = ['<500K', '500-1000K', '1000-5000', '>5000'];
 $REGIONI_ITALIA = ['Abruzzo', 'Basilicata', 'Calabria', 'Campania', 'Emilia-Romagna', 'Friuli Venezia Giulia', 'Lazio', 'Liguria', 'Lombardia', 'Marche', 'Molise', 'Piemonte', 'Puglia', 'Sardegna', 'Sicilia', 'Toscana', 'Trentino-Alto Adige/Südtirol', 'Umbria', "Valle d'Aosta/Vallée d'Aoste", 'Veneto'];
 $CATEGORIE_MERCEOLOGICHE = [
-    'Agroalimentare', 'Commerciale', 'Commercio', 'Edile', 'Ente', 'Formazione', 'Fornitore', 'Impiantistica',
-    'Manifatturiere', 'Officine', 'Privato', 'Sanità', 'Servizi', 'Strategico', 'Trasporti', 'Turismo',
+    'Agroalimentare', 'Commercio', 'Servizi', 'Edilizia', 'Formazione',
+    'Manifatturiero', 'Sanità', 'Trasporti', 'Turismo', 'P.A',
 ];
 $EA_OPTIONS = [
     'Agricoltura e pesca',
@@ -139,8 +139,23 @@ $pdo->exec(
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
 );
 
+if (!in_array('promotore_utente_id', $columnsAziende, true)) {
+    $pdo->exec("ALTER TABLE aziende
+        ADD COLUMN promotore_utente_id INT UNSIGNED NULL,
+        ADD CONSTRAINT fk_azienda_promotore_utente FOREIGN KEY (promotore_utente_id) REFERENCES utenti(id) ON DELETE SET NULL");
+}
+
 $utenti = $pdo->query('SELECT id, nome, cognome FROM utenti ORDER BY nome, cognome')->fetchAll();
-$aziendePromotori = $pdo->query("SELECT id, ragione_sociale FROM aziende WHERE FIND_IN_SET('Promotore', tipologia_azienda) > 0 ORDER BY ragione_sociale")->fetchAll();
+// Include secondary roles as well as the primary role for existing users.
+$utentiRco = $pdo->query("SELECT u.id, u.nome, u.cognome FROM utenti u
+    WHERE u.ruolo IN ('Amministratore', 'Responsabile di Area', 'Consulente')
+       OR EXISTS (SELECT 1 FROM utenti_ruoli ur WHERE ur.utente_id = u.id
+           AND ur.ruolo IN ('Amministratore', 'Responsabile di Area', 'Consulente'))
+    ORDER BY u.nome, u.cognome")->fetchAll();
+$utentiPromotori = $pdo->query("SELECT u.id, u.nome, u.cognome FROM utenti u
+    WHERE u.ruolo = 'Promotore'
+       OR EXISTS (SELECT 1 FROM utenti_ruoli ur WHERE ur.utente_id = u.id AND ur.ruolo = 'Promotore')
+    ORDER BY u.nome, u.cognome")->fetchAll();
 
 $action = $_GET['action'] ?? 'list';
 $viewId = isset($_GET['view']) ? (int) $_GET['view'] : 0;
@@ -256,6 +271,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if ($azione === 'save') {
         $id = (int) ($_POST['id'] ?? 0);
+        $valoriAziendaEsistenti = [];
+        if ($id > 0) {
+            $stmtValori = $pdo->prepare('SELECT organico_medio, fatturato, categoria FROM aziende WHERE id = :id');
+            $stmtValori->execute([':id' => $id]);
+            $valoriAziendaEsistenti = $stmtValori->fetch() ?: [];
+        }
         $partitaIva = trim($_POST['partita_iva'] ?? '');
         $codiceFiscale = strtoupper(trim($_POST['codice_fiscale'] ?? ''));
         $ragioneSociale = trim($_POST['ragione_sociale'] ?? '');
@@ -334,7 +355,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $conosciutoCome = trim($_POST['conosciuto_come'] ?? '');
         $principaliProdotti = trim($_POST['principali_prodotti'] ?? '');
         $note = trim($_POST['note'] ?? '');
-        $promotoreAziendaId = ($_POST['promotore_azienda_id'] ?? '') !== '' ? (int) $_POST['promotore_azienda_id'] : null;
+        $promotoreUtenteId = ($_POST['promotore_utente_id'] ?? '') !== '' ? (int) $_POST['promotore_utente_id'] : null;
 
         if (!preg_match('/^\d{11}$/', $partitaIva)) {
             $errors[] = 'Partita IVA obbligatoria: inserire esattamente 11 numeri.';
@@ -385,11 +406,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         }
 
-        if (!in_array($organicoMedio, $ORGANICO_OPTIONS, true)) {
-            $errors[] = 'Organico Medio non valido.';
+        if ($rcoUtenteId !== null && !in_array($rcoUtenteId, array_column($utentiRco, 'id'))) {
+            $errors[] = 'RCO non valido: seleziona un Amministratore, Responsabile di Area o Consulente.';
+        }
+        if ($promotoreUtenteId !== null && !in_array($promotoreUtenteId, array_column($utentiPromotori, 'id'))) {
+            $errors[] = 'Promotore non valido: seleziona un utente con ruolo Promotore.';
+        }
+        if ($categoria !== '' && !in_array($categoria, $CATEGORIE_MERCEOLOGICHE, true)
+            && $categoria !== ($valoriAziendaEsistenti['categoria'] ?? null)) {
+            $errors[] = 'Settore di Attività non valido.';
         }
 
-        if (!in_array($fatturato, $FATTURATO_OPTIONS, true)) {
+        if (!in_array($organicoMedio, $ORGANICO_OPTIONS, true)
+            && $organicoMedio !== ($valoriAziendaEsistenti['organico_medio'] ?? null)) {
+            $errors[] = 'Numero di Dipendenti non valido.';
+        }
+
+        if (!in_array($fatturato, $FATTURATO_OPTIONS, true)
+            && $fatturato !== ($valoriAziendaEsistenti['fatturato'] ?? null)) {
             $errors[] = 'Fatturato non valido.';
         }
 
@@ -431,7 +465,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 ':conosciuto_come' => $conosciutoCome !== '' ? $conosciutoCome : null,
                 ':principali_prodotti' => $principaliProdotti !== '' ? $principaliProdotti : null,
                 ':note' => $note !== '' ? $note : null,
-                ':promotore_azienda_id' => $promotoreAziendaId,
+                ':promotore_utente_id' => $promotoreUtenteId,
             ];
 
             if ($id > 0) {
@@ -455,7 +489,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             conosciuto_come = :conosciuto_come,
                             principali_prodotti = :principali_prodotti,
                             note = :note,
-                            promotore_azienda_id = :promotore_azienda_id
+                            promotore_utente_id = :promotore_utente_id
                         WHERE id = :id';
                 $params[':id'] = $id;
             } else {
@@ -463,12 +497,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             partita_iva, codice_fiscale, ragione_sociale, iban, tipologia_azienda, codice_fatturazione,
                             telefono, pec, email, url_sito,
                             rco_utente_id, segnalata_da_utente_id, categoria, ea, organico_medio, fatturato,
-                            conosciuto_come, principali_prodotti, note, promotore_azienda_id
+                            conosciuto_come, principali_prodotti, note, promotore_utente_id
                         ) VALUES (
                             :partita_iva, :codice_fiscale, :ragione_sociale, :iban, :tipologia_azienda, :codice_fatturazione,
                             :telefono, :pec, :email, :url_sito,
                             :rco_utente_id, :segnalata_da_utente_id, :categoria, :ea, :organico_medio, :fatturato,
-                            :conosciuto_come, :principali_prodotti, :note, :promotore_azienda_id
+                            :conosciuto_come, :principali_prodotti, :note, :promotore_utente_id
                         )';
             }
 
@@ -520,7 +554,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $aziendaInModifica = null;
                 $sediForm = [];
                 $referentiForm = [];
-                $aziendePromotori = $pdo->query("SELECT id, ragione_sociale FROM aziende WHERE FIND_IN_SET('Promotore', tipologia_azienda) > 0 ORDER BY ragione_sociale")->fetchAll();
             } catch (PDOException $e) {
                 if ($pdo->inTransaction()) {
                     $pdo->rollBack();
@@ -539,7 +572,7 @@ $filters = [
     'partita_iva', 'codice_fiscale', 'ragione_sociale', 'iban', 'tipologia_azienda', 'codice_fatturazione', 'telefono',
     'pec', 'email', 'url_sito', 'via', 'numero_civico', 'cap', 'localita', 'regione', 'provincia', 'comune', 'categoria', 'ea',
     'organico_medio', 'fatturato', 'conosciuto_come', 'principali_prodotti', 'note', 'rco_utente_id',
-    'segnalata_da_utente_id', 'promotore_azienda_id',
+    'segnalata_da_utente_id', 'promotore_utente_id',
 ];
 
 $where = [];
@@ -562,7 +595,7 @@ foreach ($filters as $field) {
               AND sede_filtro.regione = :$key
         )";
         $params[":$key"] = $value;
-    } elseif (in_array($field, ['rco_utente_id', 'segnalata_da_utente_id', 'promotore_azienda_id'], true)) {
+    } elseif (in_array($field, ['rco_utente_id', 'segnalata_da_utente_id', 'promotore_utente_id'], true)) {
         $where[] = "a.$field = :$key";
         $params[":$key"] = (int) $value;
     } else {
@@ -574,11 +607,11 @@ foreach ($filters as $field) {
 $sqlList = 'SELECT a.*, '
     . 'CONCAT(r.nome, " ", r.cognome) AS rco_nome, '
     . 'CONCAT(s.nome, " ", s.cognome) AS segnalata_nome, '
-    . 'p.ragione_sociale AS promotore_nome '
+    . 'CONCAT(p.nome, " ", p.cognome) AS promotore_nome '
     . 'FROM aziende a '
     . 'LEFT JOIN utenti r ON r.id = a.rco_utente_id '
     . 'LEFT JOIN utenti s ON s.id = a.segnalata_da_utente_id '
-    . 'LEFT JOIN aziende p ON p.id = a.promotore_azienda_id ';
+    . 'LEFT JOIN utenti p ON p.id = a.promotore_utente_id ';
 
 if ($where) {
     $sqlList .= 'WHERE ' . implode(' AND ', $where);
@@ -596,6 +629,19 @@ $formData = $aziendaInModifica ?: [];
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['azione'] ?? '') === 'save' && $errors) {
     $formData = $_POST;
 }
+// Retain an existing legacy value on edit rather than silently reclassifying the company.
+$formSelectOptions = [
+    'organico_medio' => $ORGANICO_OPTIONS,
+    'fatturato' => $FATTURATO_OPTIONS,
+    'categoria' => $CATEGORIE_MERCEOLOGICHE,
+];
+foreach ($formSelectOptions as $campo => &$opzioni) {
+    $valorePrecedente = $aziendaInModifica[$campo] ?? $valoriAziendaEsistenti[$campo] ?? '';
+    if ($valorePrecedente !== '' && !in_array($valorePrecedente, $opzioni, true)) {
+        $opzioni[] = $valorePrecedente;
+    }
+}
+unset($opzioni);
 $formTipologie = isset($formData['tipologia_azienda'])
     ? (is_array($formData['tipologia_azienda']) ? $formData['tipologia_azienda'] : explode(',', (string) $formData['tipologia_azienda']))
     : [];
@@ -607,33 +653,33 @@ $referentiFormJson = json_encode($referentiForm, JSON_HEX_TAG | JSON_HEX_APOS | 
         <nav class="col-12 col-md-3 col-lg-2 sidebar p-3">
             <h1 class="h4 text-white mb-4">Simplex</h1>
             <ul class="nav nav-pills flex-column gap-2 mb-3">
-                <li class="nav-item"><a class="nav-link" href="bacheca.php">Bacheca</a></li>
-                <li class="nav-item"><a class="nav-link" href="offerte.php">Offerte</a></li>
-                <li class="nav-item"><a class="nav-link" href="commesse.php">Commesse</a></li>
+                <li class="nav-item"><a class="nav-link" href="bacheca.php"><?= menuIcon('Bacheca') ?> Bacheca</a></li>
+                <li class="nav-item"><a class="nav-link" href="offerte.php"><?= menuIcon('Offerte') ?> Offerte</a></li>
+                <li class="nav-item"><a class="nav-link" href="commesse.php"><?= menuIcon('Commesse') ?> Commesse</a></li>
 
                 <li class="nav-item">
                     <a class="nav-link d-flex justify-content-between align-items-center" data-bs-toggle="collapse" href="#menuAnagrafiche" role="button" aria-expanded="false" aria-controls="menuAnagrafiche">
-                        <span>Anagrafiche</span><span>▾</span>
+                        <span><?= menuIcon('Anagrafiche') ?> Anagrafiche</span><span>▾</span>
                     </a>
                     <ul class="nav flex-column ms-3 collapse" id="menuAnagrafiche">
-                        <li class="nav-item"><a class="nav-link" href="utenti.php">Utenti</a></li>
-                        <li class="nav-item"><a class="nav-link" href="aziende.php">Aziende</a></li>
-                        <li class="nav-item"><a class="nav-link" href="enti_certificazione.php">Enti di Certificazione</a></li>
+                        <li class="nav-item"><a class="nav-link" href="utenti.php"><?= menuIcon('Utenti') ?> Utenti</a></li>
+                        <li class="nav-item"><a class="nav-link" href="aziende.php"><?= menuIcon('Aziende') ?> Aziende</a></li>
+                        <li class="nav-item"><a class="nav-link" href="enti_certificazione.php"><?= menuIcon('Enti di Certificazione') ?> Enti di Certificazione</a></li>
                     </ul>
                 </li>
 
                 <li class="nav-item">
                     <a class="nav-link d-flex justify-content-between align-items-center" data-bs-toggle="collapse" href="#menuAmministrazione" role="button" aria-expanded="false" aria-controls="menuAmministrazione">
-                        <span>Amministrazione</span><span>▾</span>
+                        <span><?= menuIcon('Amministrazione') ?> Amministrazione</span><span>▾</span>
                     </a>
                     <ul class="nav flex-column ms-3 collapse" id="menuAmministrazione">
-                        <li class="nav-item"><a class="nav-link" href="amministrazione_produzione.php">Produzione</a></li>
-                        <li class="nav-item"><a class="nav-link" href="fatture.php">Fatture</a></li>
-                        <li class="nav-item"><a class="nav-link" href="pagamenti.php">Pagamenti</a></li>
+                        <li class="nav-item"><a class="nav-link" href="amministrazione_produzione.php"><?= menuIcon('Produzione') ?> Produzione</a></li>
+                        <li class="nav-item"><a class="nav-link" href="fatture.php"><?= menuIcon('Fatture') ?> Fatture</a></li>
+                        <li class="nav-item"><a class="nav-link" href="pagamenti.php"><?= menuIcon('Pagamenti') ?> Pagamenti</a></li>
                     </ul>
                 </li>
 
-                <li class="nav-item"><a class="nav-link disabled" href="#">Impostazioni</a></li>
+                <li class="nav-item"><a class="nav-link disabled" href="#"><?= menuIcon('Impostazioni') ?> Impostazioni</a></li>
             </ul>
 
             <?php if ($utenteLoggato): ?>
@@ -642,7 +688,7 @@ $referentiFormJson = json_encode($referentiForm, JSON_HEX_TAG | JSON_HEX_APOS | 
                     <strong><?= htmlspecialchars($utenteLoggato['nome_completo']) ?></strong><br>
                     <span class="text-light-emphasis"><?= htmlspecialchars($utenteLoggato['nome_utente']) ?></span>
                     <div class="mt-2">
-                        <a class="btn btn-outline-light btn-sm" href="logout.php">Logout</a>
+                        <a class="btn btn-outline-light btn-sm" href="logout.php"><?= menuIcon('Logout') ?> Logout</a>
                     </div>
                 </div>
 
@@ -766,7 +812,7 @@ $referentiFormJson = json_encode($referentiForm, JSON_HEX_TAG | JSON_HEX_APOS | 
                                 <label class="form-label">RCO</label>
                                 <select class="form-select" name="rco_utente_id">
                                     <option value="">-- Seleziona --</option>
-                                    <?php foreach ($utenti as $utente): ?>
+                                    <?php foreach ($utentiRco as $utente): ?>
                                         <option value="<?= (int)$utente['id'] ?>" <?= ((int)($formData['rco_utente_id'] ?? 0) === (int)$utente['id']) ? 'selected' : '' ?>>
                                             <?= htmlspecialchars($utente['nome'] . ' ' . $utente['cognome']) ?>
                                         </option>
@@ -785,10 +831,10 @@ $referentiFormJson = json_encode($referentiForm, JSON_HEX_TAG | JSON_HEX_APOS | 
                                 </select>
                             </div>
                             <div class="col-md-4">
-                                <label class="form-label">Categoria</label>
+                                <label class="form-label">Settore di Attività</label>
                                 <select class="form-select" name="categoria">
                                     <option value="">-- Seleziona --</option>
-                                    <?php foreach ($CATEGORIE_MERCEOLOGICHE as $categoria): ?>
+                                    <?php foreach ($formSelectOptions['categoria'] as $categoria): ?>
                                         <option value="<?= htmlspecialchars($categoria) ?>" <?= (($formData['categoria'] ?? '') === $categoria) ? 'selected' : '' ?>><?= htmlspecialchars($categoria) ?></option>
                                     <?php endforeach; ?>
                                 </select>
@@ -804,10 +850,10 @@ $referentiFormJson = json_encode($referentiForm, JSON_HEX_TAG | JSON_HEX_APOS | 
                                 </select>
                             </div>
                             <div class="col-md-3">
-                                <label class="form-label">Organico Medio *</label>
+                                <label class="form-label">Numero di Dipendenti *</label>
                                 <select class="form-select" name="organico_medio" required>
                                     <option value="">-- Seleziona --</option>
-                                    <?php foreach ($ORGANICO_OPTIONS as $option): ?>
+                                    <?php foreach ($formSelectOptions['organico_medio'] as $option): ?>
                                         <option value="<?= htmlspecialchars($option) ?>" <?= (($formData['organico_medio'] ?? '') === $option) ? 'selected' : '' ?>><?= htmlspecialchars($option) ?></option>
                                     <?php endforeach; ?>
                                 </select>
@@ -816,7 +862,7 @@ $referentiFormJson = json_encode($referentiForm, JSON_HEX_TAG | JSON_HEX_APOS | 
                                 <label class="form-label">Fatturato *</label>
                                 <select class="form-select" name="fatturato" required>
                                     <option value="">-- Seleziona --</option>
-                                    <?php foreach ($FATTURATO_OPTIONS as $option): ?>
+                                    <?php foreach ($formSelectOptions['fatturato'] as $option): ?>
                                         <option value="<?= htmlspecialchars($option) ?>" <?= (($formData['fatturato'] ?? '') === $option) ? 'selected' : '' ?>><?= htmlspecialchars($option) ?></option>
                                     <?php endforeach; ?>
                                 </select>
@@ -832,12 +878,12 @@ $referentiFormJson = json_encode($referentiForm, JSON_HEX_TAG | JSON_HEX_APOS | 
                                 </select>
                             </div>
                             <div class="col-md-8">
-                                <label class="form-label">Promotore (azienda)</label>
-                                <select class="form-select" name="promotore_azienda_id">
+                                <label class="form-label">Promotore</label>
+                                <select class="form-select" name="promotore_utente_id">
                                     <option value="">-- Seleziona --</option>
-                                    <?php foreach ($aziendePromotori as $aziendaPromotore): ?>
-                                        <option value="<?= (int)$aziendaPromotore['id'] ?>" <?= ((int)($formData['promotore_azienda_id'] ?? 0) === (int)$aziendaPromotore['id']) ? 'selected' : '' ?>>
-                                            <?= htmlspecialchars($aziendaPromotore['ragione_sociale']) ?>
+                                    <?php foreach ($utentiPromotori as $utentePromotore): ?>
+                                        <option value="<?= (int)$utentePromotore['id'] ?>" <?= ((int)($formData['promotore_utente_id'] ?? 0) === (int)$utentePromotore['id']) ? 'selected' : '' ?>>
+                                            <?= htmlspecialchars($utentePromotore['nome'] . ' ' . $utentePromotore['cognome']) ?>
                                         </option>
                                     <?php endforeach; ?>
                                 </select>
@@ -1026,6 +1072,7 @@ $referentiFormJson = json_encode($referentiForm, JSON_HEX_TAG | JSON_HEX_APOS | 
                 </div>
             <?php endif; ?>
 
+            <?php if ($action !== 'new'): ?>
             <div class="card mb-4">
                 <div class="card-header">Filtri Aziende</div>
                 <div class="card-body">
@@ -1050,7 +1097,7 @@ $referentiFormJson = json_encode($referentiForm, JSON_HEX_TAG | JSON_HEX_APOS | 
                             </select>
                         </div>
                         <div class="col-md-1"><input class="form-control" name="f_provincia" placeholder="PR" value="<?= htmlspecialchars($_GET['f_provincia'] ?? '') ?>"></div>
-                        <div class="col-md-2"><input class="form-control" name="f_organico_medio" placeholder="Organico" value="<?= htmlspecialchars($_GET['f_organico_medio'] ?? '') ?>"></div>
+                        <div class="col-md-2"><input class="form-control" name="f_organico_medio" placeholder="Numero di Dipendenti" value="<?= htmlspecialchars($_GET['f_organico_medio'] ?? '') ?>"></div>
                         <div class="col-md-2"><input class="form-control" name="f_fatturato" placeholder="Fatturato" value="<?= htmlspecialchars($_GET['f_fatturato'] ?? '') ?>"></div>
 
                         <div class="col-md-3">
@@ -1063,7 +1110,7 @@ $referentiFormJson = json_encode($referentiForm, JSON_HEX_TAG | JSON_HEX_APOS | 
                         </div>
                         <div class="col-md-3">
                             <select class="form-select" name="f_categoria">
-                                <option value="">Categoria</option>
+                                <option value="">Settore di Attività</option>
                                 <?php foreach ($CATEGORIE_MERCEOLOGICHE as $categoria): ?>
                                     <option value="<?= htmlspecialchars($categoria) ?>" <?= (($_GET['f_categoria'] ?? '') === $categoria) ? 'selected' : '' ?>><?= htmlspecialchars($categoria) ?></option>
                                 <?php endforeach; ?>
@@ -1089,7 +1136,7 @@ $referentiFormJson = json_encode($referentiForm, JSON_HEX_TAG | JSON_HEX_APOS | 
                         <div class="col-md-4">
                             <select class="form-select" name="f_rco_utente_id">
                                 <option value="">RCO</option>
-                                <?php foreach ($utenti as $utente): ?>
+                                <?php foreach ($utentiRco as $utente): ?>
                                     <option value="<?= (int)$utente['id'] ?>" <?= ((string)($_GET['f_rco_utente_id'] ?? '') === (string)$utente['id']) ? 'selected' : '' ?>>
                                         <?= htmlspecialchars($utente['nome'] . ' ' . $utente['cognome']) ?>
                                     </option>
@@ -1107,11 +1154,11 @@ $referentiFormJson = json_encode($referentiForm, JSON_HEX_TAG | JSON_HEX_APOS | 
                             </select>
                         </div>
                         <div class="col-md-4">
-                            <select class="form-select" name="f_promotore_azienda_id">
-                                <option value="">Promotore (azienda)</option>
-                                <?php foreach ($aziendePromotori as $aziendaPromotore): ?>
-                                    <option value="<?= (int)$aziendaPromotore['id'] ?>" <?= ((string)($_GET['f_promotore_azienda_id'] ?? '') === (string)$aziendaPromotore['id']) ? 'selected' : '' ?>>
-                                        <?= htmlspecialchars($aziendaPromotore['ragione_sociale']) ?>
+                            <select class="form-select" name="f_promotore_utente_id">
+                                <option value="">Promotore</option>
+                                <?php foreach ($utentiPromotori as $utentePromotore): ?>
+                                    <option value="<?= (int)$utentePromotore['id'] ?>" <?= ((string)($_GET['f_promotore_utente_id'] ?? '') === (string)$utentePromotore['id']) ? 'selected' : '' ?>>
+                                        <?= htmlspecialchars($utentePromotore['nome'] . ' ' . $utentePromotore['cognome']) ?>
                                     </option>
                                 <?php endforeach; ?>
                             </select>
@@ -1174,6 +1221,7 @@ $referentiFormJson = json_encode($referentiForm, JSON_HEX_TAG | JSON_HEX_APOS | 
                     </table>
                 </div>
             </div>
+            <?php endif; ?>
         </main>
     </div>
 </div>
