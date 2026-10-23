@@ -3,6 +3,7 @@ require_once __DIR__ . '/config/database.php';
 require_once __DIR__ . '/includes/layout.php';
 require_once __DIR__ . '/includes/auth.php';
 require_once __DIR__ . '/includes/consuntivo.php';
+require_once __DIR__ . '/includes/proforma.php';
 
 if (!isLoggedIn()) {
     header('Location: login.php');
@@ -118,6 +119,7 @@ if (!(bool)$pdo->query("SHOW COLUMNS FROM offerta_momenti_lavorazione LIKE 'cost
 }
 
 ensureConsuntivoSchema($pdo);
+ensureProformaSchema($pdo);
 if (empty($_SESSION['csrf_consuntivo'])) {
     $_SESSION['csrf_consuntivo'] = bin2hex(random_bytes(32));
 }
@@ -243,41 +245,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
 
-    if ($azione === 'complete_momento') {
-        $id = (int) ($_POST['id'] ?? 0);
-        $momentoId = (int) ($_POST['momento_id'] ?? 0);
-        if ($id <= 0 || $momentoId <= 0) {
-            $errors[] = 'Dati completamento momento non validi.';
+    if (in_array($azione, ['complete_momento', 'complete_commessa'], true)) {
+        if (!hash_equals($_SESSION['csrf_consuntivo'], (string)($_POST['csrf_token'] ?? ''))) {
+            http_response_code(403); exit('Richiesta non valida.');
+        }
+        $id = (int)($_POST['id'] ?? 0);
+        if (!$commessaInModifica || $id !== $editId) {
+            $errors[] = 'Commessa non valida.';
         } else {
-            $stmtMom = $pdo->prepare('SELECT * FROM commessa_momenti_lavorazione WHERE id = :id AND commessa_id = :commessa_id');
-            $stmtMom->execute([':id' => $momentoId, ':commessa_id' => $id]);
-            $momento = $stmtMom->fetch();
-            if (!$momento) {
-                $errors[] = 'Momento non trovato.';
-            } else {
-                $pdo->prepare('UPDATE commessa_momenti_lavorazione SET completato = 1, completato_il = NOW() WHERE id = :id')->execute([':id' => $momentoId]);
-                $stmtExists = $pdo->prepare('SELECT id FROM fatture WHERE momento_id = :momento_id LIMIT 1');
-                $stmtExists->execute([':momento_id' => $momentoId]);
-                if (!$stmtExists->fetchColumn()) {
-                    $valoreG = (float) $momento['valore_giornaliero_uomo'];
-                    $costoTotale = (float) ($momento['costo_totale'] ?? 0);
-                    $oreM = (float) $momento['ore'];
-                    $giorniM = (float) $momento['giorni'];
-                    $giornateCalcolate = $giorniM > 0 ? $giorniM : ($oreM / 8);
-                    $importoFattura = $costoTotale > 0 ? $costoTotale : max(0, $valoreG * $giornateCalcolate);
-                    $numeroFattura = $momentoId . '/' . date('Y');
-                    $pdo->prepare('INSERT INTO fatture (commessa_id, momento_id, numero, anno_riferimento, importo) VALUES (:commessa_id, :momento_id, :numero, :anno, :importo)')
-                        ->execute([
-                            ':commessa_id' => $id,
-                            ':momento_id' => $momentoId,
-                            ':numero' => $numeroFattura,
-                            ':anno' => (int) date('Y'),
-                            ':importo' => number_format($importoFattura, 2, '.', ''),
-                        ]);
-                }
-                $success = 'Momento completato e fattura generata.';
-                $editId = $id;
-            }
+            try {
+                $proformaId = completeJobProforma($pdo, $id, $azione === 'complete_momento' ? (int)($_POST['momento_id'] ?? 0) : null);
+                $success = $proformaId ? 'Commessa completata. Pro-Forma disponibile.' : 'Momento completato. La Pro-Forma sarà emessa al completamento della commessa.';
+            } catch (PDOException $e) { $errors[] = 'Impossibile generare la Pro-Forma.'; }
+            catch (RuntimeException $e) { $errors[] = $e->getMessage(); }
+            catch (Throwable $e) { $errors[] = 'Impossibile completare la commessa e generare la Pro-Forma.'; }
         }
     }
 }
@@ -349,6 +330,13 @@ if ($editId > 0) {
             $fatturePerMomento[(int) $fattura['momento_id']] = $fattura;
         }
     }
+}
+
+$proformaCommessa = null;
+if ($commessaInModifica) {
+    $stmtProforma = $pdo->prepare('SELECT id,numero FROM proforme WHERE commessa_id=:id');
+    $stmtProforma->execute(['id' => $editId]);
+    $proformaCommessa = $stmtProforma->fetch();
 }
 
 $utenteLoggato = currentUser();
@@ -447,6 +435,7 @@ renderHeader('Simplex - Commesse');
                     </a>
                     <ul class="nav flex-column ms-3 collapse" id="menuAmministrazione">
                         <li class="nav-item"><a class="nav-link" href="amministrazione_produzione.php"><?= menuIcon('Produzione') ?> Produzione</a></li>
+                        <li class="nav-item"><a class="nav-link" href="proforme.php"><?= menuIcon('Pro-Forma') ?> Pro-Forma</a></li>
                         <li class="nav-item"><a class="nav-link" href="fatture.php"><?= menuIcon('Fatture') ?> Fatture</a></li>
                         <li class="nav-item"><a class="nav-link" href="pagamenti.php"><?= menuIcon('Pagamenti') ?> Pagamenti</a></li>
                     </ul>
@@ -473,6 +462,20 @@ renderHeader('Simplex - Commesse');
             <?php foreach ($errors as $error): ?><div class="alert alert-danger"><?= htmlspecialchars($error) ?></div><?php endforeach; ?>
 
             <?php if ($commessaInModifica): ?>
+                <div class="card mb-4"><div class="card-body d-flex gap-3 align-items-center">
+                    <strong>Stato commessa: <?= htmlspecialchars($commessaInModifica['stato']) ?></strong>
+                    <?php if ($proformaCommessa): ?>
+                        <a class="btn btn-outline-primary" href="proforme.php?view=<?= (int)$proformaCommessa['id'] ?>">Pro-Forma <?= htmlspecialchars($proformaCommessa['numero']) ?></a>
+                    <?php else: ?>
+                        <form method="post">
+                            <input type="hidden" name="azione" value="complete_commessa">
+                            <input type="hidden" name="id" value="<?= $editId ?>">
+                            <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_consuntivo']) ?>">
+                            <button class="btn btn-success" type="submit">Imposta Completato e genera Pro-Forma</button>
+                        </form>
+                    <?php endif; ?>
+                </div></div>
+
 
                 <div class="card mb-4">
                     <div class="card-header">Momenti di Lavorazione</div>
@@ -480,7 +483,7 @@ renderHeader('Simplex - Commesse');
                         <table class="table table-sm table-striped mb-0 align-middle">
                             <thead>
                                 <tr>
-                                    <th>Data</th><th>Tipologia</th><th>Valore Giornaliero Uomo (€)</th><th>Costo Totale (€)</th><th>Ore</th><th>Giorni</th><th># Incontri</th><th># ore di studio</th><th>Data Prevista</th><th>Completato</th><th>Fattura</th>
+                                    <th>Data</th><th>Tipologia</th><th>Valore Giornaliero Uomo (€)</th><th>Costo Totale (€)</th><th>Ore</th><th>Giorni</th><th># Incontri</th><th># ore di studio</th><th>Data Prevista</th><th>Completato</th><th>Documento</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -504,6 +507,7 @@ renderHeader('Simplex - Commesse');
                                             <?php else: ?>
                                                 <form method="post" class="d-inline">
                                                     <input type="hidden" name="azione" value="complete_momento">
+                                                    <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_consuntivo']) ?>">
                                                     <input type="hidden" name="id" value="<?= (int)$commessaInModifica['id'] ?>">
                                                     <input type="hidden" name="momento_id" value="<?= (int)$momento['id'] ?>">
                                                     <button type="submit" class="btn btn-sm btn-outline-primary">✔</button>
@@ -515,7 +519,9 @@ renderHeader('Simplex - Commesse');
                                             <?php if ($fatturaMomento): ?>
                                                 <a class="btn btn-sm btn-outline-success" title="Visualizza fattura" href="fatture.php?view=<?= (int) $fatturaMomento['id'] ?>">📄</a>
                                             <?php else: ?>
-                                                -
+                                                <?php if ($proformaCommessa): ?>
+                                                    <a href="proforme.php?view=<?= (int)$proformaCommessa['id'] ?>">Pro-Forma</a>
+                                                <?php else: ?>- commessa da completare<?php endif; ?>
                                             <?php endif; ?>
                                         </td>
                                     </tr>
@@ -557,6 +563,7 @@ renderHeader('Simplex - Commesse');
                 </div>
             <?php endif; ?>
 
+            <?php if (!$commessaInModifica): ?>
             <div class="card mb-4">
                 <div class="card-header">Filtro ricerca commesse</div>
                 <div class="card-body">
@@ -619,6 +626,7 @@ renderHeader('Simplex - Commesse');
                     </table>
                 </div>
             </div>
+            <?php endif; ?>
         </main>
     </div>
 </div>

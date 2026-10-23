@@ -2,6 +2,7 @@
 require_once __DIR__ . '/config/database.php';
 require_once __DIR__ . '/includes/layout.php';
 require_once __DIR__ . '/includes/auth.php';
+require_once __DIR__ . '/includes/proforma.php';
 
 if (!isLoggedIn()) {
     header('Location: login.php');
@@ -27,6 +28,9 @@ $pdo->exec("CREATE TABLE IF NOT EXISTS pagamenti (
     creato_il TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
 
+ensureProformaSchema($pdo);
+ensureInvoiceDocumentColumns($pdo);
+
 $errors = [];
 $success = null;
 
@@ -44,6 +48,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['azione'] ?? '') === 'regis
     if (!in_array($modalitaPagamento, ['Contanti', 'Bonifico', 'Carta di Credito'], true)) {
         $errors[] = 'Modalità pagamento non valida.';
     }
+
+    $stmtLinked = $pdo->prepare('SELECT proforma_id FROM fatture WHERE id=:id');
+    $stmtLinked->execute(['id' => $fatturaId]);
+    if ($stmtLinked->fetchColumn()) $errors[] = 'Registra gli accrediti dalla Pro-Forma collegata.';
 
     if (!$errors) {
         $stmtPagamento = $pdo->prepare('SELECT id FROM pagamenti WHERE fattura_id = :fattura_id');
@@ -149,6 +157,7 @@ renderHeader('Simplex - Fatture');
                     </a>
                     <ul class="nav flex-column ms-3 collapse" id="menuAmministrazione">
                         <li class="nav-item"><a class="nav-link" href="amministrazione_produzione.php"><?= menuIcon('Produzione') ?> Produzione</a></li>
+                        <li class="nav-item"><a class="nav-link" href="proforme.php"><?= menuIcon('Pro-Forma') ?> Pro-Forma</a></li>
                         <li class="nav-item"><a class="nav-link" href="fatture.php"><?= menuIcon('Fatture') ?> Fatture</a></li>
                         <li class="nav-item"><a class="nav-link" href="pagamenti.php"><?= menuIcon('Pagamenti') ?> Pagamenti</a></li>
                     </ul>
@@ -184,6 +193,11 @@ renderHeader('Simplex - Fatture');
                         <div class="col-md-6"><strong>Dettaglio pagamento:</strong> <?= htmlspecialchars(formatDateIt($fatturaDettaglio['data_pagamento'] ?? null) . ' / ' . ($fatturaDettaglio['modalita_pagamento'] ?? '-')) ?></div>
                     </div>
                 </div>
+            <?php endif; ?>
+
+            <?php if ($fatturaDettaglio && !empty($fatturaDettaglio['proforma_id'])): ?>
+                <p><a href="proforme.php?view=<?= (int)$fatturaDettaglio['proforma_id'] ?>">Pro-Forma di origine e accrediti</a></p>
+                <?php $document = $fatturaDettaglio; require __DIR__ . '/includes/document_details.php'; ?>
             <?php endif; ?>
 
             <div class="card mb-4">
@@ -226,6 +240,9 @@ renderHeader('Simplex - Fatture');
                                 <td><?= htmlspecialchars(formatDateIt($fattura['data_pagamento'] ?? null) . ' / ' . ($fattura['modalita_pagamento'] ?? '-')) ?></td>
                                 <td>
                                     <a class="btn btn-sm btn-outline-primary" href="fatture.php?view=<?= (int)$fattura['id'] ?>">📄</a>
+                                    <?php if (!empty($fattura['proforma_id'])): ?>
+                                        <a class="btn btn-sm btn-outline-success" href="proforme.php?view=<?= (int)$fattura['proforma_id'] ?>">Accrediti</a>
+                                    <?php else: ?>
                                     <button
                                         type="button"
                                         class="btn btn-sm btn-outline-success btn-paga"
@@ -235,6 +252,7 @@ renderHeader('Simplex - Fatture');
                                         data-fattura-numero="<?= htmlspecialchars($fattura['numero']) ?>"
                                         title="Registra pagamento"
                                     >💵</button>
+                                    <?php endif; ?>
                                 </td>
                             </tr>
                         <?php endforeach; ?>

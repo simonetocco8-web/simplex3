@@ -39,7 +39,7 @@ class CompanyRolesSmoke(unittest.TestCase):
     @classmethod
     def sql(cls, query):
         return subprocess.check_output(
-            ['docker', 'exec', 'simplex3-db', 'mariadb', '-uroot', '-N', '-B', 'simplex', '-e', query],
+            ['docker', 'exec', 'simplex3-db', 'mariadb', '-uroot', '-N', '-B', '--raw', 'simplex', '-e', query],
             text=True,
         ).strip()
 
@@ -92,6 +92,7 @@ class CompanyRolesSmoke(unittest.TestCase):
     def cleanup(cls):
         company_ids = f"SELECT id FROM aziende WHERE ragione_sociale LIKE '{cls.prefix}%'"
         offer_ids = f"SELECT id FROM offerte WHERE azienda_id IN ({company_ids})"
+        cls.sql(f"DELETE FROM fatture WHERE commessa_id IN (SELECT id FROM commesse WHERE offerta_id IN ({offer_ids}))")
         cls.sql(f"DELETE FROM commesse WHERE offerta_id IN ({offer_ids})")
         cls.sql(f"DELETE FROM offerte WHERE azienda_id IN ({company_ids})")
         cls.sql(f"DELETE FROM aziende WHERE ragione_sociale LIKE '{cls.prefix}%'")
@@ -206,7 +207,7 @@ class CompanyRolesSmoke(unittest.TestCase):
                 body = self.request(page)
                 nav = re.search(r'<nav\b.*?</nav>', body, re.S).group()
                 links = re.findall(r'<a\b.*?</a>', nav, re.S)
-                self.assertEqual(len(links), 13)
+                self.assertEqual(len(links), 14)
                 for link in links:
                     self.assertIn('<svg class="menu-icon"', link)
                     self.assertIn('aria-hidden="true"', link)
@@ -587,6 +588,191 @@ assert.equal(elements['consuntivo-differenza'].className,'text-danger');
 assert.equal(elements['consuntivo-differenza'].textContent,'€ -20,01');
 fields.costo_totale.value='100';form.events.input();
 assert.equal(elements['consuntivo-differenza'].className,'text-body-secondary');
+""".replace('SCRIPT', json.dumps(script))
+        subprocess.run(['node', '-e', node_test], check=True)
+
+    def complete_proforma(self):
+        job_id, _, rows, token, page = self.create_consuntivo_job()
+        self.assertNotIn('Filtro ricerca commesse', page)
+        self.assertNotIn('Elenco commesse generate', page)
+        data = {'azione': 'complete_commessa', 'id': job_id, 'csrf_token': token}
+        response = self.request('commesse.php?edit=' + job_id, data)
+        self.assertIn('Commessa completata. Pro-Forma disponibile.', response)
+        row = json.loads(self.sql("SELECT JSON_OBJECT('id',id,'data',data_emissione,'importo',importo,"
+                                  "'azienda',azienda_json,'righe',righe_json) FROM proforme "
+                                  f'WHERE commessa_id={job_id}'))
+        return job_id, rows, token, row
+
+    def credit_payload(self, pf_id, amount, date=None):
+        page = self.request('proforme.php?view=' + str(pf_id))
+        token = re.search(r'name="csrf_token" value="([^"]+)"', page).group(1)
+        key = re.search(r'name="request_key" value="([^"]+)"', page)
+        return {'azione': 'accredito', 'proforma_id': pf_id, 'csrf_token': token,
+                'data_accredito': date or '2026-10-23', 'importo': amount,
+                'request_key': key.group(1) if key else secrets.token_hex(16)}
+
+    def test_proforma_completion_and_document_snapshot(self):
+        job_id, rows, token, pf = self.complete_proforma()
+        self.assertEqual(self.sql(f'SELECT stato FROM commesse WHERE id={job_id}'), 'Completato')
+        self.assertEqual(self.sql(f'SELECT COUNT(*) FROM fatture WHERE commessa_id={job_id}'), '0')
+        self.assertEqual(len(json.loads(pf['righe'])), 2)
+        self.assertEqual(float(pf['importo']), 250)
+        company = json.loads(pf['azienda'])
+        page = self.request('proforme.php?view=' + str(pf['id']))
+        self.assertIn(company['ragione_sociale'], page)
+        self.assertIn(company['partita_iva'], page)
+        self.assertIn('Verifica personalizzata', page)
+        self.assertIn('type="date"', page)
+        self.assertIn('href="proforme.php"', page)
+        self.request('commesse.php?edit=' + job_id, {'azione': 'complete_commessa', 'id': job_id, 'csrf_token': token})
+        self.assertEqual(self.sql(f'SELECT COUNT(*) FROM proforme WHERE commessa_id={job_id}'), '1')
+        self.assertIn('Filtro ricerca commesse', self.request('commesse.php'))
+        # Completing individual moments emits the same one-document job flow.
+        other_id, _, other_rows, other_token, _ = self.create_consuntivo_job()
+        for i, moment in enumerate(other_rows):
+            self.request('commesse.php?edit=' + other_id, {'azione': 'complete_momento', 'id': other_id,
+                         'momento_id': moment['id'], 'csrf_token': other_token})
+            self.assertEqual(self.sql(f'SELECT COUNT(*) FROM proforme WHERE commessa_id={other_id}'), str(i))
+        self.assertEqual(self.sql(f'SELECT COUNT(*) FROM fatture WHERE commessa_id={other_id}'), '0')
+
+    def test_proforma_credits_and_colors(self):
+        _, _, _, pf = self.complete_proforma()
+        pf_id = pf['id']
+        first = self.credit_payload(pf_id, '100.10', pf['data'])
+        self.assertIn('Accredito registrato correttamente.', self.request('proforme.php?view=' + str(pf_id), first))
+        page = self.request('proforme.php?view=' + str(pf_id))
+        self.assertRegex(page, f'data-proforma-id="{pf_id}" class="table-warning"')
+        self.assertIn('Acconto', page)
+        self.request('proforme.php?view=' + str(pf_id), first)
+        self.assertEqual(self.sql(f'SELECT COUNT(*) FROM proforma_accrediti WHERE proforma_id={pf_id}'), '1')
+        second = self.credit_payload(pf_id, '149.90', pf['data'])
+        self.request('proforme.php?view=' + str(pf_id), second)
+        page = self.request('proforme.php?view=' + str(pf_id))
+        self.assertRegex(page, f'data-proforma-id="{pf_id}" class="table-success"')
+        self.assertIn('Saldo', page)
+        self.assertIn('Residuo: € 0,00', page)
+        self.assertEqual(float(self.sql(f'SELECT SUM(importo) FROM proforma_accrediti WHERE proforma_id={pf_id}')), 250)
+        # A fresh crafted submission cannot overpay a settled document.
+        extra = dict(second, importo='0.01', request_key=secrets.token_hex(16))
+        self.assertIn('supera il residuo', self.request('proforme.php?view=' + str(pf_id), extra))
+        self.assertEqual(self.sql(f'SELECT COUNT(*) FROM proforma_accrediti WHERE proforma_id={pf_id}'), '2')
+
+    def test_proforma_overdue_conversion_and_immutable_invoice(self):
+        import datetime
+        _, _, _, pf = self.complete_proforma()
+        pf_id = pf['id']
+        page = self.request('proforme.php?view=' + str(pf_id))
+        token = re.search(r'name="csrf_token" value="([^"]+)"', page).group(1)
+        payload = {'azione': 'genera_fattura', 'proforma_id': pf_id, 'csrf_token': token}
+        self.assertIn('solo dopo 30 giorni senza accrediti', self.request('proforme.php', payload))
+        base_date = datetime.date.fromisoformat(pf['data'])
+        for age, allowed in [(29, False), (30, True)]:
+            issued = (base_date - datetime.timedelta(days=age)).isoformat()
+            self.sql(f"UPDATE proforme SET data_emissione='{issued}' WHERE id={pf_id}")
+            page = self.request('proforme.php?view=' + str(pf_id))
+            pf_row = re.search(f'<tr data-proforma-id="{pf_id}".*?</tr>', page, re.S).group()
+            self.assertEqual('table-danger' in pf_row, allowed)
+            self.assertEqual('aria-label="Genera Fattura"' in pf_row, allowed)
+        # Source changes must not alter the already issued customer/line snapshots.
+        company = json.loads(pf['azienda'])
+        self.sql(f"UPDATE aziende SET ragione_sociale=CONCAT(ragione_sociale,'_alt') WHERE id={company['id']}")
+        response = self.request('proforme.php', payload)
+        self.assertIn('Fattura generata', response)
+        invoice_id = self.sql(f'SELECT fattura_id FROM proforme WHERE id={pf_id}')
+        self.assertTrue(invoice_id and invoice_id != 'NULL')
+        invoice = json.loads(self.sql("SELECT JSON_OBJECT('azienda',azienda_json,'righe',righe_json,'importo',importo) "
+                                      f'FROM fatture WHERE id={invoice_id}'))
+        self.assertEqual(invoice['azienda'], pf['azienda'])
+        self.assertEqual(invoice['righe'], pf['righe'])
+        self.assertEqual(float(invoice['importo']), float(pf['importo']))
+        self.assertIn(company['ragione_sociale'], self.request('fatture.php?view=' + invoice_id))
+        self.request('proforme.php', payload)
+        self.assertEqual(self.sql(f'SELECT COUNT(*) FROM fatture WHERE proforma_id={pf_id}'), '1')
+        credit = self.credit_payload(pf_id, '250', pf['data'])
+        self.request('proforme.php', credit)
+        self.assertEqual(self.sql(f'SELECT pagata FROM fatture WHERE id={invoice_id}'), '1')
+
+    def test_proforma_validation_and_partial_payment_after_deadline(self):
+        import datetime
+        import urllib.error
+        _, _, _, pf = self.complete_proforma()
+        pf_id = pf['id']
+        data = self.credit_payload(pf_id, '1', pf['data'])
+        for changes in [{'importo': '-1'}, {'importo': '0'}, {'importo': '1.001'},
+                        {'importo': '251'}, {'data_accredito': '2026-02-30'}]:
+            self.assertIn('alert alert-danger', self.request('proforme.php', dict(data, **changes)))
+        self.assertEqual(self.sql(f'SELECT COUNT(*) FROM proforma_accrediti WHERE proforma_id={pf_id}'), '0')
+        with self.assertRaises(urllib.error.HTTPError) as error:
+            self.request('proforme.php', dict(data, csrf_token='invalid'))
+        self.assertEqual(error.exception.code, 403)
+        old_date = (datetime.date.fromisoformat(pf['data']) - datetime.timedelta(days=31)).isoformat()
+        self.sql(f"UPDATE proforme SET data_emissione='{old_date}' WHERE id={pf_id}")
+        self.request('proforme.php', data)
+        page = self.request('proforme.php?view=' + str(pf_id))
+        row = re.search(f'<tr data-proforma-id="{pf_id}".*?</tr>', page, re.S).group()
+        self.assertIn('table-warning', row)
+        self.assertNotIn('Genera Fattura', row)
+        payload = {'azione': 'genera_fattura', 'proforma_id': pf_id, 'csrf_token': data['csrf_token']}
+        self.assertIn('solo dopo 30 giorni senza accrediti', self.request('proforme.php', payload))
+        self.assertEqual(self.sql(f'SELECT COUNT(*) FROM fatture WHERE proforma_id={pf_id}'), '0')
+
+    def test_company_vat_suggestions(self):
+        import urllib.error
+        data, company = self.quick_company()
+        prefix = data['partita_iva'][:4]
+        matches = json.loads(self.request('aziende_suggerimenti.php?q=' + prefix))
+        self.assertTrue(any(int(row['id']) == company['id'] for row in matches))
+        self.assertTrue(all(row['partita_iva'].startswith(prefix) for row in matches))
+        self.assertLessEqual(len(matches), 10)
+        for invalid in ['1', 'abc', "x' OR 1=1"]:
+            self.assertEqual(json.loads(self.request('aziende_suggerimenti.php?q=' + urllib.parse.quote(invalid))), [])
+        for page in ('aziende.php?action=new', 'offerte.php?action=new'):
+            self.assertIn('assets/js/company-autocomplete.js', self.request(page))
+        anonymous = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+        with self.assertRaises(urllib.error.HTTPError) as error:
+            anonymous.open('http://127.0.0.1:8000/aziende_suggerimenti.php?q=' + prefix)
+        self.assertEqual(error.exception.code, 401)
+
+    def test_completion_preserves_legacy_invoices_and_requires_csrf(self):
+        import urllib.error
+        job_id, _, rows, token, _ = self.create_consuntivo_job()
+        payload = {'azione': 'complete_commessa', 'id': job_id, 'csrf_token': token}
+        with self.assertRaises(urllib.error.HTTPError) as error:
+            self.request('commesse.php?edit=' + job_id, dict(payload, csrf_token='bad'))
+        self.assertEqual(error.exception.code, 403)
+        self.sql(f"INSERT INTO fatture (commessa_id,momento_id,numero,anno_riferimento,importo) VALUES ({job_id},{rows[0]['id']},'legacy-{job_id}',2026,200)")
+        response = self.request('commesse.php?edit=' + job_id, payload)
+        self.assertIn('ha già fatture emesse', response)
+        self.assertEqual(self.sql(f'SELECT COUNT(*) FROM proforme WHERE commessa_id={job_id}'), '0')
+        self.assertEqual(self.sql(f'SELECT COUNT(*) FROM fatture WHERE commessa_id={job_id}'), '1')
+        self.assertEqual(self.sql(f'SELECT stato FROM commesse WHERE id={job_id}'), 'In corso')
+
+    def test_company_autocomplete_interaction(self):
+        from pathlib import Path
+        script = (Path(__file__).resolve().parent.parent / 'assets/js/company-autocomplete.js').read_text()
+        node_test = r"""
+const assert=require('node:assert/strict');
+const create=()=>({children:[],events:{},setAttribute(){},replaceChildren(){this.children=[];},appendChild(child){this.children.push(child);},addEventListener(name,fn){this.events[name]=fn;},focus(){this.focused=true;},querySelector(){return this.children[0];}});
+const modal={};
+const input=create();input.value='123';input.insertAdjacentElement=(where,box)=>input.box=box;input.closest=()=>modal;
+const plain=create();plain.value='123';plain.insertAdjacentElement=(where,box)=>plain.box=box;plain.closest=()=>null;
+const select={options:[{value:'42'}],value:'',dispatchEvent(){this.changed=true;}};
+const document={querySelectorAll(){return [input,plain];},createElement(){return create();},getElementById(){return select;}};
+globalThis.fetch=async()=>({ok:true,json:async()=>[{id:42,partita_iva:'12345678901',ragione_sociale:'Azienda <test>'}]});
+globalThis.setTimeout=fn=>{fn();return 1;};globalThis.clearTimeout=()=>{};
+globalThis.window={location:{href:''}};
+let hidden=false;globalThis.bootstrap={Modal:{getInstance(){return {hide(){hidden=true;}};}}};
+new Function('document', SCRIPT)(document);
+(async()=>{
+ input.events.input();plain.events.input();
+ await new Promise(resolve=>setImmediate(resolve));
+ assert.equal(input.box.children.length,1);
+ assert.equal(input.box.children[0].textContent,'12345678901 — Azienda <test> (già censita)');
+ input.box.children[0].events.click();
+ assert.equal(select.value,'42');assert.equal(select.changed,true);assert.equal(hidden,true);
+ plain.box.children[0].events.click();assert.equal(window.location.href,'aziende.php?view=42');
+ input.value='1';input.events.input();assert.equal(input.box.children.length,0);
+})().catch(error=>{console.error(error);process.exitCode=1;});
 """.replace('SCRIPT', json.dumps(script))
         subprocess.run(['node', '-e', node_test], check=True)
 
