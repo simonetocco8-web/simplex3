@@ -29,3 +29,14 @@ body {
     color: #fff !important;
     border-color: #2b3035 !important;
 }
+
+.menu-icon {
+    display: inline-block;
+    flex-shrink: 0;
+    vertical-align: -0.15em;
+    margin-right: 0.35rem;
+}
+
+.btn .menu-icon:only-child {
+    margin-right: 0;
+}

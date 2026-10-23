@@ -2,11 +2,12 @@
 require_once __DIR__ . '/config/database.php';
 require_once __DIR__ . '/includes/layout.php';
 require_once __DIR__ . '/includes/auth.php';
+require_once __DIR__ . '/includes/company.php';
 
 $SERVIZI = [
     'SISTEMI DI GESTIONE AZIENDALE', 'SICUREZZA', 'FORMAZIONE', 'FINANZA AGEVOLATA', 'CONSULENZA SOA', 'ALTRE CONSULENZE',
 ];
-$STATI_OFFERTA = ['In Lavorazione', 'Inviata', 'Aggiudicata', 'Scaduta'];
+$STATI_OFFERTA = ['In Elaborazione', 'Inviata', 'Aggiudicata', 'Scaduta'];
 
 $DETTAGLI_SERVIZIO = [
     'SISTEMI DI GESTIONE AZIENDALE' => ['ISO 9001','MANT ISO 9001','ISO 14001','MANT ISO 14001','EMAS','MANTENIMENTO EMAS','ISO 45001','MANT ISO 45001','SA 8000','MANT SA8000','ISO 50000','MANT ISO 50000','ISO 27001','MANT ISO 27001','ISO 27017','MANT ISO 27017','ISO 27018','MANT ISO 27018','ISO 42000','MANT ISO 42000','ISO 37001','MANT ISO 37001','ISO 39001','MANT 39001','ISO 22000','MANT ISO 22000','ISO 22005','MANT ISO 22005','ISO 1090','MANT ISO 1090','SISTEMA INTEGRATO','MANTENIMENTO SISTEMA INTEGRATO','HALAL','MANTENIMENTO HALAL','GLOBAL GAP','MANTENIMENTO GLOBAL GAP','BIOLOGICO','MANTENIMENTO BIOLOGICO','MARC CE','FPC CLS','MANTENIMENTO FPC CLS','MANTENIMENTO MAR CE','BRC','MANTENIMENTO BRC AEO','Parità di genere','MANTENIMENTO Parità di genere','MODELLO 231','ODV 231','PRIVACY (GDPR)','HACCP','MANT HACCP','ANALISI TAMPONE HACCP'],
@@ -17,45 +18,67 @@ $DETTAGLI_SERVIZIO = [
     'ALTRE CONSULENZE' => ['MARKETING', 'PIANI STRATEGICI', 'CONTROLLO DI GESTIONE', 'ALTRO'],
 ];
 $MODALITA_PAGAMENTO = ['30-60 FMDF','Bonifico Bancario f.m.v.f','da definire','RI.BA.','RID','rid 06 mensilità','rimessa diretta','Rimessa Diretta'];
-$TIPOLOGIE_AZIENDA = ['Potenziale Cliente', 'Promotore', 'Fornitore', 'Partner'];
+$TIPOLOGIE_AZIENDA = ['Promotore', 'Fornitore', 'Partner', 'Cliente'];
+$ORGANICO_OPTIONS = AZIENDA_ORGANICO_OPTIONS;
+$FATTURATO_OPTIONS = AZIENDA_FATTURATO_OPTIONS;
+$REGIONI_ITALIA = ['Abruzzo', 'Basilicata', 'Calabria', 'Campania', 'Emilia-Romagna', 'Friuli Venezia Giulia', 'Lazio', 'Liguria', 'Lombardia', 'Marche', 'Molise', 'Piemonte', 'Puglia', 'Sardegna', 'Sicilia', 'Toscana', 'Trentino-Alto Adige/Südtirol', 'Umbria', "Valle d'Aosta/Vallée d'Aoste", 'Veneto'];
+
+function ensureAziendeGeoColumns(PDO $pdo): void
+{
+    $columns = $pdo->query('SHOW COLUMNS FROM aziende')->fetchAll(PDO::FETCH_COLUMN, 0);
+    if (!in_array('regione', $columns, true)) {
+        $pdo->exec("ALTER TABLE aziende ADD COLUMN regione VARCHAR(60) NULL AFTER cap");
+    }
+    if (!in_array('comune', $columns, true)) {
+        $pdo->exec("ALTER TABLE aziende ADD COLUMN comune VARCHAR(120) NULL AFTER provincia");
+    }
+    $pdo->exec("ALTER TABLE aziende MODIFY COLUMN fatturato VARCHAR(20) NOT NULL");
+}
+
+function validOfferDate(string $value): bool
+{
+    $date = DateTimeImmutable::createFromFormat('!Y-m-d', $value);
+    return $date !== false && $date->format('Y-m-d') === $value;
+}
 
 function creaAziendaRapida(PDO $pdo, array $input): array
 {
-    $partitaIva = preg_replace('/\D/', '', trim((string) ($input['partita_iva'] ?? '')));
+    global $ORGANICO_OPTIONS, $FATTURATO_OPTIONS;
+    ensureAziendeGeoColumns($pdo);
+    ensureCompanyIdentifiers($pdo);
+    $partitaIva = trim((string) ($input['partita_iva'] ?? ''));
+    $codiceFiscale = strtoupper(trim((string) ($input['codice_fiscale'] ?? '')));
+    $categoria = trim((string) ($input['categoria'] ?? ''));
+    $rcoId = ($input['rco_utente_id'] ?? '') !== '' ? (int)$input['rco_utente_id'] : null;
     $ragioneSociale = trim((string) ($input['ragione_sociale'] ?? ''));
     $tipologie = $input['tipologia_azienda'] ?? [];
     if (!is_array($tipologie)) {
         $tipologie = [];
     }
-    $tipologieValide = array_values(array_intersect($tipologie, ['Potenziale Cliente', 'Promotore', 'Fornitore', 'Partner']));
+    $tipologieValide = array_values(array_intersect($tipologie, ['Promotore', 'Fornitore', 'Partner', 'Cliente']));
     $organicoMedio = trim((string) ($input['organico_medio'] ?? ''));
-    $fatturatoRaw = str_replace(',', '.', trim((string) ($input['fatturato'] ?? '')));
+    $fatturatoRaw = trim((string) ($input['fatturato'] ?? ''));
 
-    $errors = [];
-    if (!preg_match('/^\d{11}$/', $partitaIva)) $errors[] = 'Partita IVA non valida (11 cifre).';
+    $errors = companyIdentifierErrors($pdo, $partitaIva, $codiceFiscale);
+    if ($categoria !== '' && !in_array($categoria, AZIENDA_SETTORI, true)) $errors[] = 'Settore di Attività non valido.';
+    if ($rcoId !== null && !in_array($rcoId, array_column(companyRcoUsers($pdo), 'id'))) $errors[] = 'RCO non valido.';
     if ($ragioneSociale === '') $errors[] = 'Ragione sociale obbligatoria.';
     if (!$tipologieValide) $errors[] = 'Seleziona almeno una tipologia azienda.';
-    if ($organicoMedio === '') $errors[] = 'Organico medio obbligatorio.';
-    if ($fatturatoRaw === '' || !is_numeric($fatturatoRaw) || (float)$fatturatoRaw < 0) $errors[] = 'Fatturato non valido.';
+    if (!in_array($organicoMedio, $ORGANICO_OPTIONS, true)) $errors[] = 'Organico medio non valido.';
+    if (!in_array($fatturatoRaw, $FATTURATO_OPTIONS, true)) $errors[] = 'Fatturato non valido.';
     if ($errors) return ['ok' => false, 'errors' => $errors];
 
-    $stmtExists = $pdo->prepare('SELECT id FROM aziende WHERE partita_iva = :partita_iva LIMIT 1');
-    $stmtExists->execute([':partita_iva' => $partitaIva]);
-    if ($stmtExists->fetchColumn()) {
-        return ['ok' => false, 'errors' => ['Esiste già un\'azienda con questa Partita IVA.']];
-    }
-
     $stmt = $pdo->prepare(
-        'INSERT INTO aziende (partita_iva, ragione_sociale, tipologia_azienda, organico_medio, fatturato, codice_fiscale, iban, codice_fatturazione, telefono, pec, email, url_sito, via, numero_civico, cap, localita, provincia, categoria, ea, conosciuto_come, principali_prodotti, note)
-         VALUES (:partita_iva, :ragione_sociale, :tipologia_azienda, :organico_medio, :fatturato, :codice_fiscale, :iban, :codice_fatturazione, :telefono, :pec, :email, :url_sito, :via, :numero_civico, :cap, :localita, :provincia, :categoria, :ea, :conosciuto_come, :principali_prodotti, :note)'
+        'INSERT INTO aziende (partita_iva, ragione_sociale, tipologia_azienda, organico_medio, fatturato, codice_fiscale, iban, codice_fatturazione, telefono, pec, email, url_sito, via, numero_civico, cap, localita, regione, provincia, comune, categoria, ea, conosciuto_come, principali_prodotti, note, rco_utente_id)
+         VALUES (:partita_iva, :ragione_sociale, :tipologia_azienda, :organico_medio, :fatturato, :codice_fiscale, :iban, :codice_fatturazione, :telefono, :pec, :email, :url_sito, :via, :numero_civico, :cap, :localita, :regione, :provincia, :comune, :categoria, :ea, :conosciuto_come, :principali_prodotti, :note, :rco_utente_id)'
     );
     $stmt->execute([
-        ':partita_iva' => $partitaIva,
+        ':partita_iva' => $partitaIva !== '' ? $partitaIva : null,
         ':ragione_sociale' => mb_substr($ragioneSociale, 0, 30),
         ':tipologia_azienda' => implode(',', $tipologieValide),
         ':organico_medio' => mb_substr($organicoMedio, 0, 30),
-        ':fatturato' => number_format((float)$fatturatoRaw, 2, '.', ''),
-        ':codice_fiscale' => trim((string) ($input['codice_fiscale'] ?? '')) ?: null,
+        ':fatturato' => $fatturatoRaw,
+        ':codice_fiscale' => $codiceFiscale !== '' ? $codiceFiscale : null,
         ':iban' => trim((string) ($input['iban'] ?? '')) ?: null,
         ':codice_fatturazione' => trim((string) ($input['codice_fatturazione'] ?? '')) ?: null,
         ':telefono' => trim((string) ($input['telefono'] ?? '')) ?: null,
@@ -65,15 +88,82 @@ function creaAziendaRapida(PDO $pdo, array $input): array
         ':via' => trim((string) ($input['via'] ?? '')) ?: null,
         ':numero_civico' => trim((string) ($input['numero_civico'] ?? '')) ?: null,
         ':cap' => trim((string) ($input['cap'] ?? '')) ?: null,
-        ':localita' => trim((string) ($input['localita'] ?? '')) ?: null,
+        ':localita' => trim((string) ($input['comune'] ?? '')) ?: null,
+        ':regione' => trim((string) ($input['regione'] ?? '')) ?: null,
         ':provincia' => trim((string) ($input['provincia'] ?? '')) ?: null,
-        ':categoria' => trim((string) ($input['categoria'] ?? '')) ?: null,
+        ':comune' => trim((string) ($input['comune'] ?? '')) ?: null,
+        ':categoria' => $categoria !== '' ? $categoria : null,
+        ':rco_utente_id' => $rcoId,
         ':ea' => trim((string) ($input['ea'] ?? '')) ?: null,
         ':conosciuto_come' => trim((string) ($input['conosciuto_come'] ?? '')) ?: null,
         ':principali_prodotti' => trim((string) ($input['principali_prodotti'] ?? '')) ?: null,
         ':note' => trim((string) ($input['note'] ?? '')) ?: null,
     ]);
     return ['ok' => true, 'id' => (int)$pdo->lastInsertId(), 'ragione_sociale' => mb_substr($ragioneSociale, 0, 30)];
+}
+
+function sediAziendaOpzioni(PDO $pdo, int $aziendaId): array
+{
+    if ($aziendaId <= 0) {
+        return [];
+    }
+
+    if ((bool) $pdo->query("SHOW TABLES LIKE 'aziende_sedi'")->fetchColumn()) {
+        $stmtSedi = $pdo->prepare(
+            'SELECT tipo_sede, via, numero_civico, cap, regione, provincia, comune
+             FROM aziende_sedi
+             WHERE azienda_id = :azienda_id
+             ORDER BY FIELD(tipo_sede, "Legale", "Amministrativa", "Operativa"), id'
+        );
+        $stmtSedi->execute([':azienda_id' => $aziendaId]);
+        $opzioni = [];
+        foreach ($stmtSedi->fetchAll() as $sede) {
+            $indirizzo = trim((string)($sede['via'] ?? '') . ' ' . (string)($sede['numero_civico'] ?? ''));
+            $localita = trim((string)($sede['cap'] ?? '') . ' ' . (string)($sede['comune'] ?? ''));
+            $provincia = trim((string)($sede['provincia'] ?? ''));
+            if ($provincia !== '') {
+                $localita = trim($localita . ' (' . $provincia . ')');
+            }
+            $regione = trim((string)($sede['regione'] ?? ''));
+            $parti = array_filter([$indirizzo, $localita, $regione], static fn($parte) => $parte !== '');
+            if ($parti) {
+                $tipo = trim((string)($sede['tipo_sede'] ?? ''));
+                $testo = ($tipo !== '' ? $tipo . ': ' : '') . implode(', ', $parti);
+                $opzioni[] = ['value' => $testo, 'label' => $testo];
+            }
+        }
+        if ($opzioni) {
+            return $opzioni;
+        }
+    }
+
+    if (!(bool) $pdo->query("SHOW TABLES LIKE 'aziende'")->fetchColumn()) {
+        return [];
+    }
+    $stmtAzienda = $pdo->prepare('SELECT via, numero_civico, cap, regione, provincia, comune, localita FROM aziende WHERE id = :id');
+    $stmtAzienda->execute([':id' => $aziendaId]);
+    $azienda = $stmtAzienda->fetch();
+    if (!$azienda) {
+        return [];
+    }
+    $indirizzo = trim((string)($azienda['via'] ?? '') . ' ' . (string)($azienda['numero_civico'] ?? ''));
+    $comune = trim((string)($azienda['comune'] ?? ($azienda['localita'] ?? '')));
+    $localita = trim((string)($azienda['cap'] ?? '') . ' ' . $comune);
+    $provincia = trim((string)($azienda['provincia'] ?? ''));
+    if ($provincia !== '') {
+        $localita = trim($localita . ' (' . $provincia . ')');
+    }
+    $regione = trim((string)($azienda['regione'] ?? ''));
+    $testo = implode(', ', array_filter([$indirizzo, $localita, $regione], static fn($parte) => $parte !== ''));
+
+    return $testo !== '' ? [['value' => $testo, 'label' => $testo]] : [];
+}
+
+function sediAziendaTesto(PDO $pdo, int $aziendaId): string
+{
+    $opzioni = sediAziendaOpzioni($pdo, $aziendaId);
+
+    return $opzioni[0]['value'] ?? '';
 }
 
 function ensureCommessa(PDO $pdo, int $offertaId, string $consulente): ?string
@@ -111,8 +201,8 @@ function ensureCommessa(PDO $pdo, int $offertaId, string $consulente): ?string
 
     $commessaId = (int) $pdo->lastInsertId();
     $pdo->prepare(
-        'INSERT INTO commessa_momenti_lavorazione (commessa_id, data_momento, tipologia, valore_giornaliero_uomo, ore, giorni, numero_incontri, ore_studio, data_prevista)
-         SELECT :commessa_id, om.data_momento, om.tipologia, om.valore_giornaliero_uomo, om.ore, om.giorni, om.numero_incontri, om.ore_studio, om.data_prevista
+        'INSERT INTO commessa_momenti_lavorazione (commessa_id, data_momento, tipologia, valore_giornaliero_uomo, costo_totale, ore, giorni, numero_incontri, ore_studio, data_prevista)
+         SELECT :commessa_id, om.data_momento, om.tipologia, om.valore_giornaliero_uomo, om.costo_totale, om.ore, om.giorni, om.numero_incontri, om.ore_studio, om.data_prevista
          FROM offerta_momenti_lavorazione om
          WHERE om.offerta_id = :offerta_id'
     )->execute([
@@ -135,9 +225,9 @@ $pdo->exec("CREATE TABLE IF NOT EXISTS offerte (
     servizio VARCHAR(80) NOT NULL,
     tipo_dettaglio VARCHAR(30) NOT NULL,
     dettaglio_servizio VARCHAR(120) NOT NULL,
-    stato VARCHAR(20) NOT NULL DEFAULT 'In Lavorazione',
+    stato VARCHAR(20) NOT NULL DEFAULT 'In Elaborazione',
     specifiche_oggetto TEXT NULL,
-    sede_erogazione_servizio VARCHAR(255) NULL,
+    sede_erogazione_servizio TEXT NULL,
     azienda_id INT UNSIGNED NULL,
     rco_utente_id INT UNSIGNED NULL,
     segnalato_da_utente_id INT UNSIGNED NULL,
@@ -151,6 +241,7 @@ $pdo->exec("CREATE TABLE IF NOT EXISTS offerte (
     modalita_pagamento VARCHAR(80) NULL,
     sconto_percentuale DECIMAL(5,2) NULL,
     consulente_incaricato VARCHAR(100) NULL,
+    responsabile_area_utente_id INT UNSIGNED NULL,
     creato_il TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     aggiornato_il TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     UNIQUE KEY uq_protocollo_anno (protocollo_numero, anno_riferimento)
@@ -173,8 +264,9 @@ $pdo->exec("CREATE TABLE IF NOT EXISTS commessa_momenti_lavorazione (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     commessa_id INT UNSIGNED NOT NULL,
     data_momento DATE NOT NULL,
-    tipologia ENUM('Apertura', 'Chiusura') NOT NULL,
+    tipologia VARCHAR(120) NOT NULL,
     valore_giornaliero_uomo DECIMAL(12,2) NOT NULL,
+    costo_totale DECIMAL(12,2) NOT NULL DEFAULT 0,
     ore DECIMAL(8,2) NOT NULL DEFAULT 0,
     giorni DECIMAL(8,2) NOT NULL DEFAULT 0,
     numero_incontri INT UNSIGNED NOT NULL DEFAULT 0,
@@ -189,8 +281,9 @@ $pdo->exec("CREATE TABLE IF NOT EXISTS offerta_momenti_lavorazione (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     offerta_id INT UNSIGNED NOT NULL,
     data_momento DATE NOT NULL,
-    tipologia ENUM('Apertura', 'Chiusura') NOT NULL,
+    tipologia VARCHAR(120) NOT NULL,
     valore_giornaliero_uomo DECIMAL(12,2) NOT NULL,
+    costo_totale DECIMAL(12,2) NOT NULL DEFAULT 0,
     ore DECIMAL(8,2) NOT NULL DEFAULT 0,
     giorni DECIMAL(8,2) NOT NULL DEFAULT 0,
     numero_incontri INT UNSIGNED NOT NULL DEFAULT 0,
@@ -200,31 +293,55 @@ $pdo->exec("CREATE TABLE IF NOT EXISTS offerta_momenti_lavorazione (
     CONSTRAINT fk_offerta_momento_offerta FOREIGN KEY (offerta_id) REFERENCES offerte(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
 
+$pdo->exec("CREATE TABLE IF NOT EXISTS offerte_file (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    offerta_id INT UNSIGNED NOT NULL,
+    nome_originale VARCHAR(255) NOT NULL,
+    nome_salvato VARCHAR(255) NOT NULL,
+    mime_type VARCHAR(100) NULL,
+    dimensione_bytes BIGINT UNSIGNED NOT NULL DEFAULT 0,
+    caricato_il TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_offerte_file_offerta FOREIGN KEY (offerta_id) REFERENCES offerte(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+
 $migrations=[
-    'stato'=>"ALTER TABLE offerte ADD COLUMN stato VARCHAR(20) NOT NULL DEFAULT 'In Lavorazione' AFTER dettaglio_servizio",
+    'stato'=>"ALTER TABLE offerte ADD COLUMN stato VARCHAR(20) NOT NULL DEFAULT 'In Elaborazione' AFTER dettaglio_servizio",
     'consulente_incaricato'=>"ALTER TABLE offerte ADD COLUMN consulente_incaricato VARCHAR(100) NULL AFTER sconto_percentuale",
+    'responsabile_area_utente_id'=>"ALTER TABLE offerte ADD COLUMN responsabile_area_utente_id INT UNSIGNED NULL AFTER consulente_incaricato",
     'azienda_id'=>"ALTER TABLE offerte ADD COLUMN azienda_id INT UNSIGNED NULL AFTER sede_erogazione_servizio",
 ];
 foreach($migrations as $col=>$sql){ if(!(bool)$pdo->query("SHOW COLUMNS FROM offerte LIKE '{$col}'")->fetch()){ $pdo->exec($sql);} }
-$pdo->exec("ALTER TABLE offerte MODIFY COLUMN stato VARCHAR(20) NOT NULL DEFAULT 'In Lavorazione'");
-$pdo->exec("UPDATE offerte SET stato = 'In Lavorazione' WHERE stato = 'Generata'");
+$pdo->exec("ALTER TABLE offerte MODIFY COLUMN stato VARCHAR(20) NOT NULL DEFAULT 'In Elaborazione'");
+$pdo->exec("ALTER TABLE offerte MODIFY COLUMN sede_erogazione_servizio TEXT NULL");
+$pdo->exec("UPDATE offerte SET stato = 'In Elaborazione' WHERE stato IN ('Generata', 'In Lavorazione')");
+if (!(bool)$pdo->query("SHOW COLUMNS FROM offerta_momenti_lavorazione LIKE 'costo_totale'")->fetch()) {
+    $pdo->exec("ALTER TABLE offerta_momenti_lavorazione ADD COLUMN costo_totale DECIMAL(12,2) NOT NULL DEFAULT 0 AFTER valore_giornaliero_uomo");
+}
+if (!(bool)$pdo->query("SHOW COLUMNS FROM commessa_momenti_lavorazione LIKE 'costo_totale'")->fetch()) {
+    $pdo->exec("ALTER TABLE commessa_momenti_lavorazione ADD COLUMN costo_totale DECIMAL(12,2) NOT NULL DEFAULT 0 AFTER valore_giornaliero_uomo");
+}
+
+foreach (['offerta_momenti_lavorazione', 'commessa_momenti_lavorazione'] as $tabellaMomenti) {
+    $colonnaTipo = $pdo->query("SHOW COLUMNS FROM $tabellaMomenti LIKE 'tipologia'")->fetch();
+    if ($colonnaTipo && strtolower($colonnaTipo['Type']) !== 'varchar(120)') {
+        $pdo->exec("ALTER TABLE $tabellaMomenti MODIFY COLUMN tipologia VARCHAR(120) NOT NULL");
+    }
+}
 
 $utenti = $pdo->query('SELECT id, nome, cognome FROM utenti ORDER BY nome, cognome')->fetchAll();
-$CONSULENTI = [];
+$utentiRcoAzienda = companyRcoUsers($pdo);
+$RESPONSABILI_AREA = [];
 if ((bool)$pdo->query("SHOW TABLES LIKE 'utenti_ruoli'")->fetchColumn()) {
-    $consRows = $pdo->query("SELECT DISTINCT u.nome, u.cognome
-                             FROM utenti u
-                             INNER JOIN utenti_ruoli ur ON ur.utente_id = u.id
-                             WHERE ur.ruolo = 'Consulente' AND u.attivo = 1
-                             ORDER BY u.nome, u.cognome")->fetchAll();
+    $responsabiliRows = $pdo->query("SELECT DISTINCT u.id, u.nome, u.cognome
+                                     FROM utenti u
+                                     INNER JOIN utenti_ruoli ur ON ur.utente_id = u.id
+                                     WHERE ur.ruolo = 'Responsabile di Area' AND u.attivo = 1
+                                     ORDER BY u.nome, u.cognome")->fetchAll();
 } else {
-    $consRows = $pdo->query("SELECT nome, cognome FROM utenti WHERE ruolo = 'Consulente' AND attivo = 1 ORDER BY nome, cognome")->fetchAll();
+    $responsabiliRows = $pdo->query("SELECT id, nome, cognome FROM utenti WHERE ruolo = 'Responsabile di Area' AND attivo = 1 ORDER BY nome, cognome")->fetchAll();
 }
-foreach ($consRows as $r) {
-    $nomeCons = trim(($r['nome'] ?? '') . ' ' . ($r['cognome'] ?? ''));
-    if ($nomeCons !== '') {
-        $CONSULENTI[] = $nomeCons;
-    }
+foreach ($responsabiliRows as $responsabile) {
+    $RESPONSABILI_AREA[(int)$responsabile['id']] = trim(($responsabile['nome'] ?? '') . ' ' . ($responsabile['cognome'] ?? ''));
 }
 
 $aziendePromotori = [];
@@ -234,10 +351,36 @@ if ((bool)$pdo->query("SHOW TABLES LIKE 'aziende'")->fetchColumn()) {
     $aziendeTutte = $pdo->query("SELECT id, ragione_sociale FROM aziende ORDER BY ragione_sociale")->fetchAll();
 }
 
+if (($_GET['ajax'] ?? '') === 'azienda_sedi') {
+    header('Content-Type: application/json; charset=utf-8');
+    $aziendaId = (int)($_GET['id'] ?? 0);
+    echo json_encode(['ok' => true, 'sedi' => sediAziendaOpzioni($pdo, $aziendaId)], JSON_UNESCAPED_UNICODE);
+    exit;
+}
+
 $action=$_GET['action']??'list'; $viewId=(int)($_GET['view']??0); $editId=(int)($_GET['edit']??0);
 $offertaInModifica=null; $offertaInVisualizzazione=null;
-if($viewId>0){$st=$pdo->prepare('SELECT o.*, c.protocollo AS commessa_protocollo, c.consulente_nome AS commessa_consulente FROM offerte o LEFT JOIN commesse c ON c.offerta_id=o.id WHERE o.id=:id');$st->execute([':id'=>$viewId]);$offertaInVisualizzazione=$st->fetch();}
-if($editId>0){$st=$pdo->prepare('SELECT * FROM offerte WHERE id=:id');$st->execute([':id'=>$editId]);$offertaInModifica=$st->fetch();}
+$filesOfferta = [];
+if($viewId>0){
+    $st=$pdo->prepare('SELECT o.*, a.ragione_sociale AS azienda_nome, c.id AS commessa_id, c.protocollo AS commessa_protocollo, c.consulente_nome AS commessa_consulente FROM offerte o LEFT JOIN aziende a ON a.id=o.azienda_id LEFT JOIN commesse c ON c.offerta_id=o.id WHERE o.id=:id');
+    $st->execute([':id'=>$viewId]);
+    $offertaInVisualizzazione=$st->fetch();
+    if ($offertaInVisualizzazione) {
+        $stmtFiles = $pdo->prepare('SELECT * FROM offerte_file WHERE offerta_id = :offerta_id ORDER BY caricato_il DESC');
+        $stmtFiles->execute([':offerta_id' => $viewId]);
+        $filesOfferta = $stmtFiles->fetchAll();
+    }
+}
+if($editId>0){
+    $st=$pdo->prepare('SELECT * FROM offerte WHERE id=:id');
+    $st->execute([':id'=>$editId]);
+    $offertaInModifica=$st->fetch();
+    if ($offertaInModifica) {
+        $stmtFiles = $pdo->prepare('SELECT * FROM offerte_file WHERE offerta_id = :offerta_id ORDER BY caricato_il DESC');
+        $stmtFiles->execute([':offerta_id' => $editId]);
+        $filesOfferta = $stmtFiles->fetchAll();
+    }
+}
 $momentiOfferta = [];
 if ($editId > 0) {
     $stMom = $pdo->prepare('SELECT * FROM offerta_momenti_lavorazione WHERE offerta_id = :offerta_id ORDER BY id ASC');
@@ -253,32 +396,101 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
             echo json_encode(['ok' => false, 'errors' => ['Tabella aziende non disponibile.']]);
             exit;
         }
-        $result = creaAziendaRapida($pdo, $_POST);
+        try {
+            $result = creaAziendaRapida($pdo, $_POST);
+        } catch (PDOException $e) {
+            $result = ['ok' => false, 'errors' => [(int)($e->errorInfo[1] ?? 0) === 1062
+                ? 'Azienda già censita a sistema con questa Partita IVA.'
+                : 'Errore durante il salvataggio azienda.']];
+        }
         echo json_encode($result, JSON_UNESCAPED_UNICODE);
         exit;
+    }
+    if ($azione === 'upload_file') {
+        $idOfferta = (int) ($_POST['id'] ?? 0);
+        if ($idOfferta <= 0) {
+            $errors[] = 'Offerta non valida per upload file.';
+        } elseif (!isset($_FILES['allegato']) || !is_array($_FILES['allegato'])) {
+            $errors[] = 'Nessun file ricevuto.';
+        } else {
+            $file = $_FILES['allegato'];
+            if ((int) ($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
+                $errors[] = 'Errore durante il caricamento del file.';
+            } else {
+                $uploadBase = __DIR__ . '/uploads/offerte/' . $idOfferta;
+                if (!is_dir($uploadBase) && !mkdir($uploadBase, 0775, true) && !is_dir($uploadBase)) {
+                    $errors[] = 'Impossibile creare la cartella di upload.';
+                } else {
+                    $originalName = basename((string) $file['name']);
+                    $ext = pathinfo($originalName, PATHINFO_EXTENSION);
+                    $storedName = uniqid('file_', true) . ($ext ? '.' . $ext : '');
+                    $target = $uploadBase . '/' . $storedName;
+                    if (!move_uploaded_file((string) $file['tmp_name'], $target)) {
+                        $errors[] = 'Impossibile salvare il file sul server.';
+                    } else {
+                        $mime = function_exists('mime_content_type') ? mime_content_type($target) : null;
+                        $size = filesize($target);
+                        $pdo->prepare('INSERT INTO offerte_file (offerta_id, nome_originale, nome_salvato, mime_type, dimensione_bytes) VALUES (:offerta_id, :nome_originale, :nome_salvato, :mime_type, :dimensione_bytes)')
+                            ->execute([
+                                ':offerta_id' => $idOfferta,
+                                ':nome_originale' => $originalName,
+                                ':nome_salvato' => $storedName,
+                                ':mime_type' => $mime,
+                                ':dimensione_bytes' => (int) $size,
+                            ]);
+                        $success = 'File caricato correttamente.';
+                        $viewId = $idOfferta;
+                        $st = $pdo->prepare('SELECT o.*, a.ragione_sociale AS azienda_nome, c.id AS commessa_id, c.protocollo AS commessa_protocollo, c.consulente_nome AS commessa_consulente FROM offerte o LEFT JOIN aziende a ON a.id=o.azienda_id LEFT JOIN commesse c ON c.offerta_id=o.id WHERE o.id=:id');
+                        $st->execute([':id' => $viewId]);
+                        $offertaInVisualizzazione = $st->fetch();
+                        $stmtFiles = $pdo->prepare('SELECT * FROM offerte_file WHERE offerta_id = :offerta_id ORDER BY caricato_il DESC');
+                        $stmtFiles->execute([':offerta_id' => $viewId]);
+                        $filesOfferta = $stmtFiles->fetchAll();
+                    }
+                }
+            }
+        }
     }
     if($azione==='delete'){ $id=(int)($_POST['id']??0); if($id>0){$pdo->prepare('DELETE FROM offerte WHERE id=:id')->execute([':id'=>$id]);$success='Offerta eliminata correttamente.';}}
     if($azione==='save'){
         $id=(int)($_POST['id']??0);
         $servizio=trim($_POST['servizio']??''); $dettaglioServizio=trim($_POST['dettaglio_servizio']??'');
-        $stato=trim($_POST['stato']??'In Lavorazione'); $consulenteIncaricato=trim($_POST['consulente_incaricato']??'');
+        $stato=trim($_POST['stato']??'In Elaborazione');
+        $responsabileAreaUtenteId=($_POST['responsabile_area_utente_id']??'')!=='' ? (int)$_POST['responsabile_area_utente_id'] : null;
+        // Il consulente può essere assegnato esclusivamente dalla Bacheca del responsabile.
+        $consulenteIncaricato='';
+        if($id>0){
+            $stmtConsulente=$pdo->prepare('SELECT consulente_incaricato FROM offerte WHERE id=:id');
+            $stmtConsulente->execute([':id'=>$id]);
+            $consulenteIncaricato=trim((string)$stmtConsulente->fetchColumn());
+        }
         $specificheOggetto=trim($_POST['specifiche_oggetto']??''); $sedeErogazione=trim($_POST['sede_erogazione_servizio']??'');
         $aziendaId = ($_POST['azienda_id'] ?? '') !== '' ? (int) $_POST['azienda_id'] : null;
-        $rcoUtenteId=(int)($_POST['rco_utente_id']??0); $segnalatoDaUtenteId=($_POST['segnalato_da_utente_id']??'')!==''?(int)$_POST['segnalato_da_utente_id']:null;
-        $dataOfferta=trim($_POST['data_offerta']??''); $validitaGiorniInput=trim($_POST['validita_giorni']??''); $dataScadenza=trim($_POST['data_scadenza']??'');
+        if ($sedeErogazione === '' && $aziendaId !== null) {
+            $sedeErogazione = sediAziendaTesto($pdo, $aziendaId);
+        }
+        $rcoUtenteId=(int)($_POST['rco_utente_id']??0);
+        $segnalatoDaUtenteId = null;
+        if ($id > 0) {
+            $stmtSegnalato = $pdo->prepare('SELECT segnalato_da_utente_id FROM offerte WHERE id=:id');
+            $stmtSegnalato->execute([':id' => $id]);
+            $segnalatoDaUtenteId = $stmtSegnalato->fetchColumn() ?: null;
+        }
+        $dataOfferta=normalizeDateForDb($_POST['data_offerta']??'') ?? ''; $validitaGiorniInput=trim($_POST['validita_giorni']??''); $dataScadenza=normalizeDateForDb($_POST['data_scadenza']??'') ?? '';
         $note=trim($_POST['note']??''); $promotoreAziendaId=($_POST['promotore_azienda_id']??'')!==''?(int)$_POST['promotore_azienda_id']:null;
         $commissioneTipo=trim($_POST['commissione_tipo']??''); $commissioneValoreInput=trim($_POST['commissione_valore']??'');
         $modalitaPagamento=trim($_POST['modalita_pagamento']??''); $scontoInput=trim($_POST['sconto_percentuale']??'');
 
         if(!in_array($servizio,$SERVIZI,true)) $errors[]='Servizio non valido.';
         if(!in_array($stato,$STATI_OFFERTA,true)) $errors[]='Stato offerta non valido.';
-        if($stato==='Aggiudicata' && !in_array($consulenteIncaricato,$CONSULENTI,true)) $errors[]='Se lo stato è Aggiudicata devi selezionare un consulente incaricato valido.';
+        if($stato==='Aggiudicata' && ($responsabileAreaUtenteId===null || !isset($RESPONSABILI_AREA[$responsabileAreaUtenteId]))) $errors[]='Se lo stato è Aggiudicata devi selezionare un Responsabile di Area valido.';
+        if($stato!=='Aggiudicata') $responsabileAreaUtenteId=null;
         $opzioniDettaglio=$DETTAGLI_SERVIZIO[$servizio]??[]; if(!$opzioniDettaglio||!in_array($dettaglioServizio,$opzioniDettaglio,true)) $errors[]='Dettaglio servizio non valido.';
         if($rcoUtenteId<=0) $errors[]='Il campo RCO è obbligatorio.';
         if ($aziendaId === null) $errors[]='Il campo Azienda è obbligatorio. Se non presente, usa il popup \"Nuova Azienda\".';
-        if($dataOfferta===''||!preg_match('/^\d{4}-\d{2}-\d{2}$/',$dataOfferta)) $errors[]='Data Offerta obbligatoria e non valida.';
+        if(!validOfferDate($dataOfferta)) $errors[]='Data Offerta obbligatoria e non valida.';
         $validitaGiorni=$validitaGiorniInput!==''?(int)$validitaGiorniInput:0; if($validitaGiorniInput!==''&&$validitaGiorni<=0)$errors[]='Validità non valida.';
-        if($dataScadenza!==''&&!preg_match('/^\d{4}-\d{2}-\d{2}$/',$dataScadenza))$errors[]='Data di Scadenza non valida.';
+        if($dataScadenza!==''&&!validOfferDate($dataScadenza))$errors[]='Data di Scadenza non valida.';
         if(!$errors){
             $dOff=new DateTimeImmutable($dataOfferta);
             if($validitaGiorni>0&&$dataScadenza==='') $dataScadenza=$dOff->modify('+' . $validitaGiorni . ' days')->format('Y-m-d');
@@ -290,6 +502,23 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
         $commissioneValore=$commissioneValoreInput!==''?(float)str_replace(',','.',$commissioneValoreInput):null; if($commissioneValore!==null&&$commissioneValore<0)$errors[]='Commissione non valida.';
         $sconto=(float)str_replace(',','.',$scontoInput); if($scontoInput===''||$sconto<0||$sconto>100)$errors[]='% Sconto obbligatorio e tra 0 e 100.';
 
+        $momDataInput = $_POST['momento_data_momento'] ?? [];
+        $momTipInput = $_POST['momento_tipologia'] ?? [];
+        $momValInput = $_POST['momento_valore_giornaliero_uomo'] ?? [];
+        $momCostoInput = $_POST['momento_costo_totale'] ?? [];
+        foreach ($momDataInput as $i => $dataMomento) {
+            $dataMomento = normalizeDateForDb($dataMomento) ?? '';
+            $tipoMomento = trim((string)($momTipInput[$i] ?? ''));
+            $valoreMomento = trim((string)($momValInput[$i] ?? ''));
+            $costoMomento = trim((string)($momCostoInput[$i] ?? ''));
+            // The initial empty row has a suggested typology but no entered values.
+            if ($dataMomento === '' && $valoreMomento === '' && $costoMomento === ''
+                && ($tipoMomento === '' || $tipoMomento === 'Apertura')) continue;
+            if (!validOfferDate($dataMomento)) $errors[] = 'Data del momento di lavorazione non valida.';
+            if ($tipoMomento === '' || mb_strlen($tipoMomento) > 120) $errors[] = 'Tipologia obbligatoria e massimo 120 caratteri.';
+            if (!is_numeric(str_replace(',', '.', $valoreMomento)) || (float)str_replace(',', '.', $valoreMomento) < 0) $errors[] = 'Valore giornaliero del momento non valido.';
+        }
+
         if(!$errors){
             $tipoDettaglio=$servizio==='SISTEMI DI GESTIONE AZIENDALE'?'SottoServizio':'Servizio Specifico';
             $params=[
@@ -300,55 +529,66 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
                 ':validita_giorni'=>$validitaGiorni, ':data_scadenza'=>$dataScadenza!==''?$dataScadenza:null, ':note'=>$note!==''?$note:null,
                 ':promotore_azienda_id'=>$promotoreAziendaId, ':commissione_tipo'=>$commissioneTipo!==''?$commissioneTipo:null,
                 ':commissione_valore'=>$commissioneValore, ':modalita_pagamento'=>$modalitaPagamento, ':sconto_percentuale'=>number_format($sconto,2,'.',''),
-                ':consulente_incaricato'=>$consulenteIncaricato!==''?$consulenteIncaricato:null,
+                ':responsabile_area_utente_id'=>$responsabileAreaUtenteId,
             ];
             if($id>0){
-                $sql='UPDATE offerte SET servizio=:servizio,tipo_dettaglio=:tipo_dettaglio,dettaglio_servizio=:dettaglio_servizio,stato=:stato,specifiche_oggetto=:specifiche_oggetto,sede_erogazione_servizio=:sede_erogazione_servizio,azienda_id=:azienda_id,rco_utente_id=:rco_utente_id,segnalato_da_utente_id=:segnalato_da_utente_id,data_offerta=:data_offerta,validita_giorni=:validita_giorni,data_scadenza=:data_scadenza,note=:note,promotore_azienda_id=:promotore_azienda_id,commissione_tipo=:commissione_tipo,commissione_valore=:commissione_valore,modalita_pagamento=:modalita_pagamento,sconto_percentuale=:sconto_percentuale,consulente_incaricato=:consulente_incaricato WHERE id=:id';
+                $sql='UPDATE offerte SET servizio=:servizio,tipo_dettaglio=:tipo_dettaglio,dettaglio_servizio=:dettaglio_servizio,stato=:stato,specifiche_oggetto=:specifiche_oggetto,sede_erogazione_servizio=:sede_erogazione_servizio,azienda_id=:azienda_id,rco_utente_id=:rco_utente_id,segnalato_da_utente_id=:segnalato_da_utente_id,data_offerta=:data_offerta,validita_giorni=:validita_giorni,data_scadenza=:data_scadenza,note=:note,promotore_azienda_id=:promotore_azienda_id,commissione_tipo=:commissione_tipo,commissione_valore=:commissione_valore,modalita_pagamento=:modalita_pagamento,sconto_percentuale=:sconto_percentuale,responsabile_area_utente_id=:responsabile_area_utente_id WHERE id=:id';
                 $params[':id']=$id; $pdo->prepare($sql)->execute($params); $offertaIdForCommessa=$id; $success='Offerta aggiornata correttamente.';
             } else {
                 $anno=(int)date('Y'); $stn=$pdo->prepare('SELECT COALESCE(MAX(protocollo_numero),0)+1 FROM offerte WHERE anno_riferimento=:anno'); $stn->execute([':anno'=>$anno]);
                 $num=(int)$stn->fetchColumn(); $protocollo=$num.'/'.$anno;
-                $sql='INSERT INTO offerte (protocollo_numero,anno_riferimento,protocollo,servizio,tipo_dettaglio,dettaglio_servizio,stato,specifiche_oggetto,sede_erogazione_servizio,azienda_id,rco_utente_id,segnalato_da_utente_id,data_offerta,validita_giorni,data_scadenza,note,promotore_azienda_id,commissione_tipo,commissione_valore,modalita_pagamento,sconto_percentuale,consulente_incaricato)
-                      VALUES (:protocollo_numero,:anno_riferimento,:protocollo,:servizio,:tipo_dettaglio,:dettaglio_servizio,:stato,:specifiche_oggetto,:sede_erogazione_servizio,:azienda_id,:rco_utente_id,:segnalato_da_utente_id,:data_offerta,:validita_giorni,:data_scadenza,:note,:promotore_azienda_id,:commissione_tipo,:commissione_valore,:modalita_pagamento,:sconto_percentuale,:consulente_incaricato)';
-                $pdo->prepare($sql)->execute($params+[':protocollo_numero'=>$num,':anno_riferimento'=>$anno,':protocollo'=>$protocollo]);
+                $sql='INSERT INTO offerte (protocollo_numero,anno_riferimento,protocollo,servizio,tipo_dettaglio,dettaglio_servizio,stato,specifiche_oggetto,sede_erogazione_servizio,azienda_id,rco_utente_id,segnalato_da_utente_id,data_offerta,validita_giorni,data_scadenza,note,promotore_azienda_id,commissione_tipo,commissione_valore,modalita_pagamento,sconto_percentuale,consulente_incaricato,responsabile_area_utente_id)
+                      VALUES (:protocollo_numero,:anno_riferimento,:protocollo,:servizio,:tipo_dettaglio,:dettaglio_servizio,:stato,:specifiche_oggetto,:sede_erogazione_servizio,:azienda_id,:rco_utente_id,:segnalato_da_utente_id,:data_offerta,:validita_giorni,:data_scadenza,:note,:promotore_azienda_id,:commissione_tipo,:commissione_valore,:modalita_pagamento,:sconto_percentuale,:consulente_incaricato,:responsabile_area_utente_id)';
+                $pdo->prepare($sql)->execute($params+[':protocollo_numero'=>$num,':anno_riferimento'=>$anno,':protocollo'=>$protocollo,':consulente_incaricato'=>null]);
                 $offertaIdForCommessa=(int)$pdo->lastInsertId(); $success='Offerta creata correttamente con protocollo: '.$protocollo;
             }
-
-            $consulentePerCommessa = $consulenteIncaricato !== '' ? $consulenteIncaricato : 'N/D';
-            $nuovaCommessa = ensureCommessa($pdo, $offertaIdForCommessa, $consulentePerCommessa);
-            if($nuovaCommessa){ $success .= ' | Commessa generata: ' . $nuovaCommessa; }
 
             $momData = $_POST['momento_data_momento'] ?? [];
             $momTip = $_POST['momento_tipologia'] ?? [];
             $momVal = $_POST['momento_valore_giornaliero_uomo'] ?? [];
-            $momOre = $_POST['momento_ore'] ?? [];
-            $momGio = $_POST['momento_giorni'] ?? [];
+            $momCostoTot = $_POST['momento_costo_totale'] ?? [];
             if (is_array($momData) && is_array($momTip) && is_array($momVal)) {
                 $pdo->prepare('DELETE FROM offerta_momenti_lavorazione WHERE offerta_id = :offerta_id')->execute([':offerta_id' => $offertaIdForCommessa]);
                 $rows = max(count($momData), count($momTip), count($momVal));
-                $insMomOff = $pdo->prepare('INSERT INTO offerta_momenti_lavorazione (offerta_id, data_momento, tipologia, valore_giornaliero_uomo, ore, giorni) VALUES (:offerta_id, :data_momento, :tipologia, :valore, :ore, :giorni)');
+                $insMomOff = $pdo->prepare('INSERT INTO offerta_momenti_lavorazione (offerta_id, data_momento, tipologia, valore_giornaliero_uomo, costo_totale, ore, giorni) VALUES (:offerta_id, :data_momento, :tipologia, :valore, :costo_totale, :ore, :giorni)');
                 for ($i = 0; $i < $rows; $i++) {
-                    $d = trim((string)($momData[$i] ?? ''));
+                    $d = normalizeDateForDb($momData[$i] ?? '') ?? '';
                     $t = trim((string)($momTip[$i] ?? ''));
                     $v = str_replace(',', '.', trim((string)($momVal[$i] ?? '')));
-                    $o = str_replace(',', '.', trim((string)($momOre[$i] ?? '0')));
-                    $g = str_replace(',', '.', trim((string)($momGio[$i] ?? '0')));
-                    if ($d === '' && $t === '' && $v === '') continue;
+                    $ct = str_replace(',', '.', trim((string)($momCostoTot[$i] ?? '0')));
+                    if ($d === '' && $t === '' && $v === '' && $ct === '') continue;
                     if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $d)) continue;
-                    if (!in_array($t, ['Apertura', 'Chiusura'], true)) continue;
+                    if ($t === '' || mb_strlen($t) > 120) continue;
                     if (!is_numeric($v) || (float)$v < 0) continue;
-                    if (!is_numeric($o) || (float)$o < 0) $o = '0';
-                    if (!is_numeric($g) || (float)$g < 0) $g = '0';
+                    if (!is_numeric($ct) || (float)$ct < 0) $ct = '0';
+                    $giorniCalc = 0;
+                    $oreCalc = 0;
+                    if ((float)$v > 0 && (float)$ct > 0) {
+                        $giorniInteri = (int) floor((float)$ct / (float)$v);
+                        $costoResiduo = (float)$ct - ($giorniInteri * (float)$v);
+                        $oreResidue = (int) ceil(($costoResiduo / (float)$v) * 8);
+                        if ($oreResidue >= 8) {
+                            $giorniInteri += (int) floor($oreResidue / 8);
+                            $oreResidue = $oreResidue % 8;
+                        }
+                        $giorniCalc = $giorniInteri;
+                        $oreCalc = $oreResidue;
+                    }
                     $insMomOff->execute([
                         ':offerta_id' => $offertaIdForCommessa,
                         ':data_momento' => $d,
                         ':tipologia' => $t,
                         ':valore' => number_format((float)$v, 2, '.', ''),
-                        ':ore' => number_format((float)$o, 2, '.', ''),
-                        ':giorni' => number_format((float)$g, 2, '.', ''),
+                        ':costo_totale' => number_format((float)$ct, 2, '.', ''),
+                        ':ore' => number_format((float)$oreCalc, 2, '.', ''),
+                        ':giorni' => number_format((float)$giorniCalc, 2, '.', ''),
                     ]);
                 }
             }
+
+            $consulentePerCommessa = $consulenteIncaricato !== '' ? $consulenteIncaricato : 'N/D';
+            $nuovaCommessa = ensureCommessa($pdo, $offertaIdForCommessa, $consulentePerCommessa);
+            if($nuovaCommessa){ $success .= ' | Commessa generata: ' . $nuovaCommessa; }
 
             $action='list'; $editId=0; $offertaInModifica=null;
         }
@@ -357,116 +597,273 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
 
 $filters=['protocollo','servizio','stato','dettaglio_servizio','rco_utente_id','segnalato_da_utente_id','data_offerta','validita_giorni','data_scadenza','modalita_pagamento','sconto_percentuale','consulente_incaricato','anno_riferimento'];
 $where=[];$params=[];
-foreach($filters as $f){$k='f_'.$f;$v=trim((string)($_GET[$k]??''));if($v==='')continue; if(in_array($f,['rco_utente_id','segnalato_da_utente_id','validita_giorni','anno_riferimento'],true)){$where[]="o.$f=:$k";$params[":$k"]=(int)$v;}else{$where[]="o.$f LIKE :$k";$params[":$k"]='%'.$v.'%';}}
+foreach($filters as $f){$k='f_'.$f;$v=trim((string)($_GET[$k]??''));if($v==='')continue; if(in_array($f,['rco_utente_id','segnalato_da_utente_id','validita_giorni','anno_riferimento'],true)){$where[]="o.$f=:$k";$params[":$k"]=(int)$v;}elseif(in_array($f,['data_offerta','data_scadenza'],true)){$where[]="o.$f=:$k";$params[":$k"]=normalizeDateForDb($v);}else{$where[]="o.$f LIKE :$k";$params[":$k"]='%'.$v.'%';}}
 
-$sqlList='SELECT o.*, CONCAT(r.nome, " ", r.cognome) AS rco_nome, c.protocollo AS commessa_protocollo, c.consulente_nome AS commessa_consulente,
-                 a.ragione_sociale AS azienda_nome
+$sqlList='SELECT o.*, CONCAT(r.nome, " ", r.cognome) AS rco_nome, c.id AS commessa_id, c.protocollo AS commessa_protocollo, c.consulente_nome AS commessa_consulente,
+                 a.ragione_sociale AS azienda_nome,
+                 COALESCE(importi.importo_totale, 0) AS importo_totale
           FROM offerte o
           LEFT JOIN utenti r ON r.id = o.rco_utente_id
           LEFT JOIN commesse c ON c.offerta_id = o.id
-          LEFT JOIN aziende a ON a.id = o.azienda_id';
+          LEFT JOIN aziende a ON a.id = o.azienda_id
+          LEFT JOIN (
+              SELECT offerta_id, SUM(costo_totale) AS importo_totale
+              FROM offerta_momenti_lavorazione
+              GROUP BY offerta_id
+          ) importi ON importi.offerta_id = o.id';
 if($where){$sqlList.=' WHERE '.implode(' AND ',$where);} $sqlList.=' ORDER BY o.id DESC';
 $stL=$pdo->prepare($sqlList); $stL->execute($params); $offerte=$stL->fetchAll();
 
 $utenteLoggato=currentUser(); $formData=$offertaInModifica?:[];
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['azione'] ?? '') === 'save' && $errors) {
+    $formData = $_POST;
+    $momentiOfferta = [];
+    foreach (($_POST['momento_data_momento'] ?? []) as $i => $dataMomento) {
+        $momentiOfferta[] = [
+            'data_momento' => $dataMomento,
+            'tipologia' => $_POST['momento_tipologia'][$i] ?? '',
+            'valore_giornaliero_uomo' => $_POST['momento_valore_giornaliero_uomo'][$i] ?? '',
+            'costo_totale' => $_POST['momento_costo_totale'][$i] ?? '',
+        ];
+    }
+}
 renderHeader('Simplex - Offerte');
 ?>
 <div class="container-fluid"><div class="row">
 <nav class="col-12 col-md-3 col-lg-2 sidebar p-3"><h1 class="h4 text-white mb-4">Simplex</h1><ul class="nav nav-pills flex-column gap-2 mb-3">
-                <li class="nav-item"><a class="nav-link" href="bacheca.php">Bacheca</a></li>
-                <li class="nav-item"><a class="nav-link" href="offerte.php">Offerte</a></li>
-                <li class="nav-item"><a class="nav-link" href="commesse.php">Commesse</a></li>
+                <li class="nav-item"><a class="nav-link" href="bacheca.php"><?= menuIcon('Bacheca') ?> Bacheca</a></li>
+                <li class="nav-item"><a class="nav-link" href="offerte.php"><?= menuIcon('Offerte') ?> Offerte</a></li>
+                <li class="nav-item"><a class="nav-link" href="commesse.php"><?= menuIcon('Commesse') ?> Commesse</a></li>
 
                 <li class="nav-item">
                     <a class="nav-link d-flex justify-content-between align-items-center" data-bs-toggle="collapse" href="#menuAnagrafiche" role="button" aria-expanded="false" aria-controls="menuAnagrafiche">
-                        <span>Anagrafiche</span><span>▾</span>
+                        <span><?= menuIcon('Anagrafiche') ?> Anagrafiche</span><span>▾</span>
                     </a>
                     <ul class="nav flex-column ms-3 collapse" id="menuAnagrafiche">
-                        <li class="nav-item"><a class="nav-link" href="utenti.php">Utenti</a></li>
-                        <li class="nav-item"><a class="nav-link" href="aziende.php">Aziende</a></li>
-                        <li class="nav-item"><a class="nav-link" href="enti_certificazione.php">Enti di Certificazione</a></li>
+                        <li class="nav-item"><a class="nav-link" href="utenti.php"><?= menuIcon('Utenti') ?> Utenti</a></li>
+                        <li class="nav-item"><a class="nav-link" href="aziende.php"><?= menuIcon('Aziende') ?> Aziende</a></li>
+                        <li class="nav-item"><a class="nav-link" href="enti_certificazione.php"><?= menuIcon('Enti di Certificazione') ?> Enti di Certificazione</a></li>
                     </ul>
                 </li>
 
                 <li class="nav-item">
                     <a class="nav-link d-flex justify-content-between align-items-center" data-bs-toggle="collapse" href="#menuAmministrazione" role="button" aria-expanded="false" aria-controls="menuAmministrazione">
-                        <span>Amministrazione</span><span>▾</span>
+                        <span><?= menuIcon('Amministrazione') ?> Amministrazione</span><span>▾</span>
                     </a>
                     <ul class="nav flex-column ms-3 collapse" id="menuAmministrazione">
-                        <li class="nav-item"><a class="nav-link" href="amministrazione_produzione.php">Produzione</a></li>
-                        <li class="nav-item"><a class="nav-link" href="fatture.php">Fatture</a></li>
-                        <li class="nav-item"><a class="nav-link" href="pagamenti.php">Pagamenti</a></li>
+                        <li class="nav-item"><a class="nav-link" href="amministrazione_produzione.php"><?= menuIcon('Produzione') ?> Produzione</a></li>
+                        <li class="nav-item"><a class="nav-link" href="fatture.php"><?= menuIcon('Fatture') ?> Fatture</a></li>
+                        <li class="nav-item"><a class="nav-link" href="pagamenti.php"><?= menuIcon('Pagamenti') ?> Pagamenti</a></li>
                     </ul>
                 </li>
 
-                <li class="nav-item"><a class="nav-link disabled" href="#">Impostazioni</a></li>
-            </ul><?php if($utenteLoggato): ?><div class="text-white small border-top pt-3"><div>Connesso come:</div><strong><?= htmlspecialchars($utenteLoggato['nome_completo']) ?></strong><br><span class="text-light-emphasis"><?= htmlspecialchars($utenteLoggato['nome_utente']) ?></span><div class="mt-2"><a class="btn btn-outline-light btn-sm" href="logout.php">Logout</a></div></div><?php endif; ?></nav>
+                <li class="nav-item"><a class="nav-link disabled" href="#"><?= menuIcon('Impostazioni') ?> Impostazioni</a></li>
+            </ul><?php if($utenteLoggato): ?><div class="text-white small border-top pt-3"><div>Connesso come:</div><strong><?= htmlspecialchars($utenteLoggato['nome_completo']) ?></strong><br><span class="text-light-emphasis"><?= htmlspecialchars($utenteLoggato['nome_utente']) ?></span><div class="mt-2"><a class="btn btn-outline-light btn-sm" href="logout.php"><?= menuIcon('Logout') ?> Logout</a></div></div><?php endif; ?></nav>
 <main class="col-12 col-md-9 col-lg-10 p-4">
 <div class="d-flex justify-content-between align-items-center mb-4"><h2 class="mb-0">Gestione Offerte</h2><a class="btn btn-primary" href="offerte.php?action=new">Nuova Offerta</a></div>
 <?php if($success): ?><div class="alert alert-success"><?= htmlspecialchars($success) ?></div><?php endif; ?>
 <?php foreach($errors as $error): ?><div class="alert alert-danger"><?= htmlspecialchars($error) ?></div><?php endforeach; ?>
 
+<?php if($offertaInVisualizzazione): ?>
+<div class="card mb-4 shadow-sm">
+    <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
+        <span>Dettaglio Offerta</span>
+        <div class="d-flex flex-wrap align-items-center gap-2">
+            <span class="badge text-bg-<?= ($offertaInVisualizzazione['stato'] ?? '') === 'Aggiudicata' ? 'success' : (($offertaInVisualizzazione['stato'] ?? '') === 'Scaduta' ? 'secondary' : 'primary') ?>"><?= htmlspecialchars($offertaInVisualizzazione['stato'] ?? '-') ?></span>
+            <a class="btn btn-sm btn-outline-primary" href="offerte.php?edit=<?= (int)$offertaInVisualizzazione['id'] ?>">Modifica offerta</a>
+        </div>
+    </div>
+    <div class="card-body">
+        <div class="row g-3">
+            <div class="col-md-3">
+                <div class="text-muted small text-uppercase">Protocollo</div>
+                <div class="fw-semibold fs-5"><?= htmlspecialchars($offertaInVisualizzazione['protocollo'] ?? '-') ?></div>
+            </div>
+            <div class="col-md-3">
+                <div class="text-muted small text-uppercase">Ragione Sociale Azienda</div>
+                <div>
+                    <?php if (!empty($offertaInVisualizzazione['azienda_id'])): ?>
+                        <a href="aziende.php?view=<?= (int)$offertaInVisualizzazione['azienda_id'] ?>"><?= htmlspecialchars($offertaInVisualizzazione['azienda_nome'] ?? '-') ?></a>
+                    <?php else: ?>
+                        -
+                    <?php endif; ?>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="text-muted small text-uppercase">Servizio</div>
+                <div class="fw-semibold"><?= htmlspecialchars($offertaInVisualizzazione['servizio'] ?? '-') ?></div>
+            </div>
+            <div class="col-md-3">
+                <div class="text-muted small text-uppercase">Dettaglio Servizio</div>
+                <div><?= htmlspecialchars($offertaInVisualizzazione['dettaglio_servizio'] ?? '-') ?></div>
+            </div>
+            <div class="col-md-3">
+                <div class="text-muted small text-uppercase">Stato</div>
+                <div><?= htmlspecialchars($offertaInVisualizzazione['stato'] ?? '-') ?></div>
+            </div>
+            <div class="col-md-4">
+                <div class="text-muted small text-uppercase">Sede Erogazione Servizio</div>
+                <div><?= htmlspecialchars($offertaInVisualizzazione['sede_erogazione_servizio'] ?? '-') ?></div>
+            </div>
+            <div class="col-md-2">
+                <div class="text-muted small text-uppercase">Data Offerta</div>
+                <div><?= htmlspecialchars(formatDateIt($offertaInVisualizzazione['data_offerta'] ?? null)) ?></div>
+            </div>
+            <div class="col-md-2">
+                <div class="text-muted small text-uppercase">Data Scadenza</div>
+                <div><?= htmlspecialchars(formatDateIt($offertaInVisualizzazione['data_scadenza'] ?? null)) ?></div>
+            </div>
+            <div class="col-md-4">
+                <div class="text-muted small text-uppercase">Consulente Incaricato</div>
+                <div><?= htmlspecialchars($offertaInVisualizzazione['consulente_incaricato'] ?? '-') ?></div>
+            </div>
+            <div class="col-md-4">
+                <div class="text-muted small text-uppercase">Commessa Protocollo</div>
+                <div>
+                    <?php if (!empty($offertaInVisualizzazione['commessa_id'])): ?>
+                        <a class="btn btn-sm btn-outline-success" href="commesse.php?edit=<?= (int)$offertaInVisualizzazione['commessa_id'] ?>"><?= htmlspecialchars($offertaInVisualizzazione['commessa_protocollo'] ?? '-') ?></a>
+                    <?php else: ?>
+                        -
+                    <?php endif; ?>
+                </div>
+            </div>
+            <div class="col-12">
+                <div class="text-muted small text-uppercase">Note</div>
+                <div class="border rounded bg-light p-3"><?= nl2br(htmlspecialchars($offertaInVisualizzazione['note'] ?? '-')) ?></div>
+            </div>
+        </div>
+    </div>
+</div>
+<?php endif; ?>
+
+<?php $offertaPerFile = $offertaInVisualizzazione ?: $offertaInModifica; ?>
+<?php if($offertaPerFile): ?>
+<div class="card mb-4">
+    <div class="card-header">Documenti Offerta</div>
+    <div class="card-body">
+        <form method="post" enctype="multipart/form-data" class="row g-2 mb-3">
+            <input type="hidden" name="azione" value="upload_file">
+            <input type="hidden" name="id" value="<?= (int)$offertaPerFile['id'] ?>">
+            <div class="col-md-9"><input type="file" class="form-control" name="allegato" required></div>
+            <div class="col-md-3 d-grid"><button class="btn btn-outline-primary" type="submit">Carica file</button></div>
+        </form>
+        <div class="table-responsive">
+            <table class="table table-sm table-striped align-middle mb-0">
+                <thead><tr><th>Nome file</th><th>Tipo</th><th>Dimensione</th><th>Caricato il</th><th>Azioni</th></tr></thead>
+                <tbody>
+                <?php if(!$filesOfferta): ?><tr><td colspan="5" class="text-center text-muted py-3">Nessun file caricato.</td></tr><?php endif; ?>
+                <?php foreach($filesOfferta as $file): ?>
+                    <tr>
+                        <td><?= htmlspecialchars($file['nome_originale']) ?></td>
+                        <td><?= htmlspecialchars($file['mime_type'] ?? '-') ?></td>
+                        <td><?= htmlspecialchars((string)$file['dimensione_bytes']) ?> bytes</td>
+                        <td><?= htmlspecialchars(formatDateIt($file['caricato_il'] ?? null)) ?></td>
+                        <td>
+                            <a class="btn btn-sm btn-outline-secondary" href="download_offerta_file.php?id=<?= (int)$file['id'] ?>&mode=view" target="_blank">Visualizza</a>
+                            <a class="btn btn-sm btn-outline-primary" href="download_offerta_file.php?id=<?= (int)$file['id'] ?>&mode=download">Scarica</a>
+                        </td>
+                    </tr>
+                <?php endforeach; ?>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+<?php endif; ?>
+
 <?php if($action==='new'||$editId>0): ?>
 <div class="card mb-4"><div class="card-header"><?= $editId>0?'Modifica Offerta':'Nuova Offerta' ?></div><div class="card-body"><form method="post" class="row g-3" id="form-offerta"><input type="hidden" name="azione" value="save"><input type="hidden" name="id" value="<?= (int)($formData['id']??0) ?>">
+<?php if ($editId > 0): ?>
+<div class="col-md-4"><label class="form-label">Protocollo</label><input class="form-control" value="<?= htmlspecialchars($formData['protocollo'] ?? '-') ?>" readonly></div>
+<?php endif; ?>
+<div class="col-md-5"><label class="form-label">Azienda *</label><select class="form-select" name="azienda_id" id="azienda_id"><option value="">-- Seleziona --</option><?php foreach($aziendeTutte as $az): ?><option value="<?= (int)$az['id'] ?>" <?= ((int)($formData['azienda_id']??0)===(int)$az['id'])?'selected':'' ?>><?= htmlspecialchars($az['ragione_sociale']) ?></option><?php endforeach; ?></select></div>
+<div class="col-md-5"><label class="form-label">Sede di erogazione del servizio</label><select class="form-select" name="sede_erogazione_servizio" id="sede_erogazione_servizio" data-selected="<?= htmlspecialchars($formData['sede_erogazione_servizio']??'') ?>"><option value=""><?= ((int)($formData['azienda_id']??0)>0) ? '-- Seleziona una sede --' : '-- Seleziona prima l\'azienda --' ?></option><?php if (!empty($formData['sede_erogazione_servizio'])): ?><option value="<?= htmlspecialchars($formData['sede_erogazione_servizio']) ?>" selected><?= htmlspecialchars($formData['sede_erogazione_servizio']) ?></option><?php endif; ?></select></div>
+<div class="col-md-2 d-flex align-items-end"><button type="button" class="btn btn-outline-primary w-100" data-bs-toggle="modal" data-bs-target="#modalNuovaAzienda">+ Nuova Azienda</button></div>
 <div class="col-md-4"><label class="form-label">Servizio *</label><select class="form-select" name="servizio" id="servizio" required><option value="">-- Seleziona --</option><?php foreach($SERVIZI as $sv): ?><option value="<?= htmlspecialchars($sv) ?>" <?= (($formData['servizio']??'')===$sv)?'selected':'' ?>><?= htmlspecialchars($sv) ?></option><?php endforeach; ?></select></div>
 <div class="col-md-4"><label class="form-label" id="label-dettaglio">Dettaglio *</label><select class="form-select" name="dettaglio_servizio" id="dettaglio_servizio" required></select></div>
-<div class="col-md-4"><label class="form-label">Status Offerta</label><select class="form-select" name="stato" id="stato_offerta" required><?php foreach($STATI_OFFERTA as $st): ?><option value="<?= $st ?>" <?= (($formData['stato']??'In Lavorazione')===$st)?'selected':'' ?>><?= $st ?></option><?php endforeach; ?></select></div>
-<div class="col-md-6" id="box-consulente"><label class="form-label">Consulente incaricato (per Aggiudicata)</label><select class="form-select" name="consulente_incaricato" id="consulente_incaricato"><option value="">-- Seleziona --</option><?php foreach($CONSULENTI as $cons): ?><option value="<?= htmlspecialchars($cons) ?>" <?= (($formData['consulente_incaricato']??'')===$cons)?'selected':'' ?>><?= htmlspecialchars($cons) ?></option><?php endforeach; ?></select></div>
+<div class="col-md-4"><label class="form-label">Status Offerta</label><select class="form-select" name="stato" id="stato_offerta" required><?php foreach($STATI_OFFERTA as $st): ?><option value="<?= $st ?>" <?= (($formData['stato']??'In Elaborazione')===$st)?'selected':'' ?>><?= $st ?></option><?php endforeach; ?></select></div>
+<div class="col-md-6" id="box-responsabile-area"><label class="form-label">Responsabile di Area *</label><select class="form-select" name="responsabile_area_utente_id" id="responsabile_area_utente_id"><option value="">-- Seleziona --</option><?php foreach($RESPONSABILI_AREA as $responsabileId=>$responsabileNome): ?><option value="<?= $responsabileId ?>" <?= ((int)($formData['responsabile_area_utente_id']??0)===$responsabileId)?'selected':'' ?>><?= htmlspecialchars($responsabileNome) ?></option><?php endforeach; ?></select></div>
 <div class="col-12"><label class="form-label">Specifiche Oggetto</label><textarea class="form-control" name="specifiche_oggetto" rows="2"><?= htmlspecialchars($formData['specifiche_oggetto']??'') ?></textarea></div>
-<div class="col-md-6"><label class="form-label">Sede di erogazione del servizio</label><input class="form-control" name="sede_erogazione_servizio" value="<?= htmlspecialchars($formData['sede_erogazione_servizio']??'') ?>"></div>
-<div class="col-md-6"><label class="form-label">Azienda *</label><select class="form-select" name="azienda_id" id="azienda_id"><option value="">-- Seleziona --</option><?php foreach($aziendeTutte as $az): ?><option value="<?= (int)$az['id'] ?>" <?= ((int)($formData['azienda_id']??0)===(int)$az['id'])?'selected':'' ?>><?= htmlspecialchars($az['ragione_sociale']) ?></option><?php endforeach; ?></select></div>
-<div class="col-md-6 d-flex align-items-end"><button type="button" class="btn btn-outline-primary" data-bs-toggle="modal" data-bs-target="#modalNuovaAzienda">+ Nuova Azienda</button></div>
 <div class="col-md-3"><label class="form-label">RCO *</label><select class="form-select" name="rco_utente_id" required><option value="">-- Seleziona --</option><?php foreach($utenti as $u): ?><option value="<?= (int)$u['id'] ?>" <?= ((int)($formData['rco_utente_id']??0)===(int)$u['id'])?'selected':'' ?>><?= htmlspecialchars($u['nome'].' '.$u['cognome']) ?></option><?php endforeach; ?></select></div>
-<div class="col-md-3"><label class="form-label">Segnalato da</label><select class="form-select" name="segnalato_da_utente_id"><option value="">-- Seleziona --</option><?php foreach($utenti as $u): ?><option value="<?= (int)$u['id'] ?>" <?= ((int)($formData['segnalato_da_utente_id']??0)===(int)$u['id'])?'selected':'' ?>><?= htmlspecialchars($u['nome'].' '.$u['cognome']) ?></option><?php endforeach; ?></select></div>
-<div class="col-md-4"><label class="form-label">Data Offerta *</label><input type="date" class="form-control" id="data_offerta" name="data_offerta" required value="<?= htmlspecialchars($formData['data_offerta']??'') ?>"></div>
+<div class="col-md-4"><label class="form-label">Data Offerta *</label><input type="date" class="form-control" id="data_offerta" name="data_offerta" placeholder="gg/mm/aaaa" required value="<?= htmlspecialchars(normalizeDateForDb($formData['data_offerta']??'') ?? '') ?>"></div>
 <div class="col-md-4"><label class="form-label">Validità (giorni) *</label><input type="number" min="1" class="form-control" id="validita_giorni" name="validita_giorni" required value="<?= htmlspecialchars($formData['validita_giorni']??'') ?>"></div>
-<div class="col-md-4"><label class="form-label">Data Scadenza</label><input type="date" class="form-control" id="data_scadenza" name="data_scadenza" value="<?= htmlspecialchars($formData['data_scadenza']??'') ?>"></div>
-<div class="col-md-4"><label class="form-label">Promotore</label><select class="form-select" name="promotore_azienda_id"><option value="">-- Seleziona --</option><?php foreach($aziendePromotori as $az): ?><option value="<?= (int)$az['id'] ?>" <?= ((int)($formData['promotore_azienda_id']??0)===(int)$az['id'])?'selected':'' ?>><?= htmlspecialchars($az['ragione_sociale']) ?></option><?php endforeach; ?></select></div>
+<div class="col-md-4"><label class="form-label">Data Scadenza</label><input type="date" class="form-control" id="data_scadenza" name="data_scadenza" placeholder="gg/mm/aaaa" value="<?= htmlspecialchars(normalizeDateForDb($formData['data_scadenza']??'') ?? '') ?>"></div>
+<div class="col-md-4"><label class="form-label">Modalità di Pagamento</label><select class="form-select" name="modalita_pagamento" required><option value="">-- Seleziona --</option><?php foreach($MODALITA_PAGAMENTO as $m): ?><option value="<?= htmlspecialchars($m) ?>" <?= (($formData['modalita_pagamento']??'')===$m)?'selected':'' ?>><?= htmlspecialchars($m) ?></option><?php endforeach; ?></select></div>
+<div class="col-md-4"><label class="form-label">Promotore/Segnalatore</label><select class="form-select" name="promotore_azienda_id"><option value="">-- Seleziona --</option><?php foreach($aziendePromotori as $az): ?><option value="<?= (int)$az['id'] ?>" <?= ((int)($formData['promotore_azienda_id']??0)===(int)$az['id'])?'selected':'' ?>><?= htmlspecialchars($az['ragione_sociale']) ?></option><?php endforeach; ?></select></div>
 <div class="col-md-2"><label class="form-label">Commissione</label><select class="form-select" name="commissione_tipo"><option value="">--</option><option value="percentuale" <?= (($formData['commissione_tipo']??'')==='percentuale')?'selected':'' ?>>%</option><option value="euro" <?= (($formData['commissione_tipo']??'')==='euro')?'selected':'' ?>>€</option></select></div>
 <div class="col-md-2"><label class="form-label">Valore</label><input class="form-control" name="commissione_valore" value="<?= htmlspecialchars($formData['commissione_valore']??'') ?>"></div>
-<div class="col-md-4"><label class="form-label">Modalità di Pagamento</label><select class="form-select" name="modalita_pagamento" required><option value="">-- Seleziona --</option><?php foreach($MODALITA_PAGAMENTO as $m): ?><option value="<?= htmlspecialchars($m) ?>" <?= (($formData['modalita_pagamento']??'')===$m)?'selected':'' ?>><?= htmlspecialchars($m) ?></option><?php endforeach; ?></select></div>
-<div class="col-md-4"><label class="form-label">% Sconto</label><input type="number" min="0" max="100" step="0.01" class="form-control" required name="sconto_percentuale" value="<?= htmlspecialchars($formData['sconto_percentuale']??'') ?>"></div>
 <div class="col-12"><label class="form-label">Note</label><textarea class="form-control" name="note" rows="2"><?= htmlspecialchars($formData['note']??'') ?></textarea></div>
 <div class="col-12">
     <label class="form-label">Momenti di Lavorazione (da riportare in Commessa)</label>
     <div class="table-responsive">
+        <datalist id="tipologie-momento"><option value="Apertura"><option value="Consegna Doc di Sistema"><option value="Chiusura"></datalist>
         <table class="table table-sm table-bordered" id="tabella-momenti-offerta">
-            <thead><tr><th>Data</th><th>Tipologia</th><th>Valore €/giorno</th><th>Ore</th><th>Giorni</th><th></th></tr></thead>
+            <thead><tr><th>Data</th><th>Tipologia</th><th>Costo Totale (€)</th><th>Valore €/giorno</th><th>Giorni</th><th>Ore</th><th></th></tr></thead>
             <tbody>
-            <?php $momRows = $momentiOfferta ?: [['data_momento'=>'','tipologia'=>'Apertura','valore_giornaliero_uomo'=>'','ore'=>'0','giorni'=>'0']]; ?>
+            <?php $momRows = $momentiOfferta ?: [['data_momento'=>'','tipologia'=>'Apertura','valore_giornaliero_uomo'=>'','costo_totale'=>'','ore'=>'0','giorni'=>'0']]; ?>
             <?php foreach($momRows as $m): ?>
                 <tr>
-                    <td><input type="date" class="form-control" name="momento_data_momento[]" value="<?= htmlspecialchars($m['data_momento'] ?? '') ?>"></td>
-                    <td><select class="form-select" name="momento_tipologia[]"><option value="Apertura" <?= (($m['tipologia'] ?? '')==='Apertura')?'selected':'' ?>>Apertura</option><option value="Chiusura" <?= (($m['tipologia'] ?? '')==='Chiusura')?'selected':'' ?>>Chiusura</option></select></td>
-                    <td><input type="number" min="0" step="0.01" class="form-control" name="momento_valore_giornaliero_uomo[]" value="<?= htmlspecialchars((string)($m['valore_giornaliero_uomo'] ?? '')) ?>"></td>
-                    <td><input type="number" min="0" step="0.01" class="form-control" name="momento_ore[]" value="<?= htmlspecialchars((string)($m['ore'] ?? '0')) ?>"></td>
-                    <td><input type="number" min="0" step="0.01" class="form-control" name="momento_giorni[]" value="<?= htmlspecialchars((string)($m['giorni'] ?? '0')) ?>"></td>
+                    <td><input type="date" class="form-control" name="momento_data_momento[]" placeholder="gg/mm/aaaa" value="<?= htmlspecialchars(normalizeDateForDb($m['data_momento'] ?? '') ?? '') ?>"></td>
+                    <td><input class="form-control" name="momento_tipologia[]" list="tipologie-momento" maxlength="120" value="<?= htmlspecialchars($m['tipologia'] ?? '') ?>" placeholder="Seleziona o scrivi una tipologia"></td>
+                    <td><input type="number" min="0" step="0.01" class="form-control momento-costo" name="momento_costo_totale[]" value="<?= htmlspecialchars((string)($m['costo_totale'] ?? ((float)($m['valore_giornaliero_uomo'] ?? 0) * (float)($m['giorni'] ?? 0))) ) ?>"></td>
+                    <td><input type="number" min="0" step="0.01" class="form-control momento-valore" name="momento_valore_giornaliero_uomo[]" value="<?= htmlspecialchars((string)($m['valore_giornaliero_uomo'] ?? '')) ?>"></td>
+                    <td><input type="number" min="0" step="1" class="form-control momento-giorni" name="momento_giorni[]" value="<?= htmlspecialchars((string)($m['giorni'] ?? '0')) ?>" readonly></td>
+                    <td><input type="number" min="0" step="1" class="form-control momento-ore" name="momento_ore[]" value="<?= htmlspecialchars((string)($m['ore'] ?? '0')) ?>" readonly></td>
                     <td><button type="button" class="btn btn-sm btn-outline-danger btn-rimuovi-momento">✕</button></td>
                 </tr>
             <?php endforeach; ?>
             </tbody>
         </table>
     </div>
-    <button type="button" class="btn btn-sm btn-outline-primary" id="btn-aggiungi-momento-offerta">+ Aggiungi momento</button>
+    <div class="row g-3 align-items-end mt-2">
+        <div class="col-md-4"><label class="form-label">SubTotale</label><input type="text" class="form-control" id="momenti_subtotale" readonly value="€ 0,00"></div>
+        <div class="col-md-4"><label class="form-label">Sconto %</label><input type="number" min="0" max="100" step="0.01" class="form-control" id="sconto_percentuale" name="sconto_percentuale" required value="<?= htmlspecialchars($formData['sconto_percentuale']??'') ?>"></div>
+        <div class="col-md-4"><label class="form-label">Totale</label><input type="text" class="form-control" id="momenti_totale" readonly value="€ 0,00"></div>
+    </div>
+    <button type="button" class="btn btn-sm btn-outline-primary mt-3" id="btn-aggiungi-momento-offerta">+ Aggiungi momento</button>
 </div>
-<div class="col-12 d-flex gap-2"><button class="btn btn-primary" type="submit">Salva Offerta</button><a class="btn btn-outline-secondary" href="offerte.php">Annulla</a></div>
+<div class="col-12 d-flex gap-2"><button class="btn btn-primary" type="submit">Salva</button><a class="btn btn-outline-secondary" href="offerte.php">Annulla</a></div>
 </form></div></div>
 <?php endif; ?>
 
+<?php if ($action !== 'new'): ?>
 <div class="card mb-4"><div class="card-header">Filtri Offerte</div><div class="card-body"><form method="get" class="row g-2">
 <div class="col-md-2"><input class="form-control" name="f_protocollo" placeholder="Protocollo" value="<?= htmlspecialchars($_GET['f_protocollo']??'') ?>"></div>
 <div class="col-md-2"><input class="form-control" name="f_servizio" placeholder="Servizio" value="<?= htmlspecialchars($_GET['f_servizio']??'') ?>"></div>
 <div class="col-md-2"><input class="form-control" name="f_stato" placeholder="Stato" value="<?= htmlspecialchars($_GET['f_stato']??'') ?>"></div>
-<div class="col-md-2"><input class="form-control" name="f_data_offerta" placeholder="Data offerta" value="<?= htmlspecialchars($_GET['f_data_offerta']??'') ?>"></div>
-<div class="col-md-2"><input class="form-control" name="f_data_scadenza" placeholder="Data scadenza" value="<?= htmlspecialchars($_GET['f_data_scadenza']??'') ?>"></div>
+<div class="col-md-2"><input class="form-control" name="f_data_offerta" placeholder="gg/mm/aaaa" value="<?= htmlspecialchars($_GET['f_data_offerta']??'') ?>"></div>
+<div class="col-md-2"><input class="form-control" name="f_data_scadenza" placeholder="gg/mm/aaaa" value="<?= htmlspecialchars($_GET['f_data_scadenza']??'') ?>"></div>
 <div class="col-md-2"><input class="form-control" name="f_consulente_incaricato" placeholder="Consulente" value="<?= htmlspecialchars($_GET['f_consulente_incaricato']??'') ?>"></div>
 <div class="col-12 d-flex gap-2"><button class="btn btn-outline-primary" type="submit">Filtra</button><a class="btn btn-outline-secondary" href="offerte.php">Reset</a></div>
 </form></div></div>
 
-<div class="card"><div class="card-header">Elenco Offerte</div><div class="table-responsive"><table class="table table-striped table-hover mb-0 align-middle"><thead class="table-light"><tr><th>Protocollo</th><th>Status</th><th>Servizio</th><th>Azienda</th><th>Data Offerta</th><th>Scadenza</th><th>Commessa</th><th>Consulente</th><th>Azioni</th></tr></thead><tbody>
-<?php if(!$offerte): ?><tr><td colspan="9" class="text-center text-muted py-4">Nessuna offerta trovata.</td></tr><?php endif; ?>
-<?php foreach($offerte as $offerta): ?><tr><td><?= htmlspecialchars($offerta['protocollo']) ?></td><td><span class="badge text-bg-<?= $offerta['stato']==='Aggiudicata'?'success':($offerta['stato']==='Scaduta'?'secondary':'primary') ?>"><?= htmlspecialchars($offerta['stato']) ?></span></td><td><?= htmlspecialchars($offerta['servizio']) ?></td><td><?= htmlspecialchars($offerta['azienda_nome'] ?? '-') ?></td><td><?= htmlspecialchars($offerta['data_offerta']??'-') ?></td><td><?= htmlspecialchars($offerta['data_scadenza']??'-') ?></td><td><?= htmlspecialchars($offerta['commessa_protocollo']??'-') ?></td><td><?= htmlspecialchars($offerta['commessa_consulente']??'-') ?></td><td><div class="d-flex gap-1"><a class="btn btn-sm btn-outline-primary" href="offerte.php?edit=<?= (int)$offerta['id'] ?>">Modifica</a><a class="btn btn-sm btn-outline-dark" href="lavorazioni.php?offerta_id=<?= (int)$offerta['id'] ?>">Lavorazioni</a><form method="post" onsubmit="return confirm('Confermi eliminazione offerta?');"><input type="hidden" name="azione" value="delete"><input type="hidden" name="id" value="<?= (int)$offerta['id'] ?>"><button class="btn btn-sm btn-outline-danger" type="submit">Elimina</button></form></div></td></tr><?php endforeach; ?>
+<div class="card"><div class="card-header">Elenco Offerte</div><div class="table-responsive"><table class="table table-striped table-hover mb-0 align-middle"><thead class="table-light"><tr><th>Protocollo</th><th>Status</th><th>Azienda</th><th>Servizio</th><th>Importo</th><th>Data Offerta</th><th>Scadenza</th><th>Commessa</th><th>Consulente</th><th>Azioni</th></tr></thead><tbody>
+<?php if(!$offerte): ?><tr><td colspan="10" class="text-center text-muted py-4">Nessuna offerta trovata.</td></tr><?php endif; ?>
+<?php foreach($offerte as $offerta): ?>
+<tr>
+    <td><?= htmlspecialchars($offerta['protocollo']) ?></td>
+    <td><span class="badge text-bg-<?= $offerta['stato']==='Aggiudicata'?'success':($offerta['stato']==='Scaduta'?'secondary':'primary') ?>"><?= htmlspecialchars($offerta['stato']) ?></span></td>
+    <td><?= htmlspecialchars($offerta['azienda_nome'] ?? '-') ?></td>
+    <td><?= htmlspecialchars($offerta['servizio']) ?></td>
+    <td>€ <?= number_format((float)($offerta['importo_totale'] ?? 0), 2, ',', '.') ?></td>
+    <td><?= htmlspecialchars(formatDateIt($offerta['data_offerta'] ?? null)) ?></td>
+    <td><?= htmlspecialchars(formatDateIt($offerta['data_scadenza'] ?? null)) ?></td>
+    <td>
+        <?php if (!empty($offerta['commessa_id'])): ?>
+            <div class="d-flex align-items-center gap-2">
+                <span><?= htmlspecialchars($offerta['commessa_protocollo'] ?? '-') ?></span>
+                <a class="btn btn-sm btn-outline-success" href="commesse.php?edit=<?= (int)$offerta['commessa_id'] ?>" title="Apri commessa collegata" aria-label="Apri commessa collegata">📂</a>
+            </div>
+        <?php else: ?>
+            -
+        <?php endif; ?>
+    </td>
+    <td><?= htmlspecialchars($offerta['commessa_consulente']??'-') ?></td>
+    <td><div class="d-flex gap-1"><a class="btn btn-sm btn-outline-primary" href="offerte.php?edit=<?= (int)$offerta['id'] ?>" title="Modifica" aria-label="Modifica"><?= menuIcon('Modifica') ?></a><a class="btn btn-sm btn-outline-dark" href="lavorazioni.php?offerta_id=<?= (int)$offerta['id'] ?>" title="Lavorazioni" aria-label="Lavorazioni"><?= menuIcon('Lavorazioni') ?></a><form method="post" onsubmit="return confirm('Confermi eliminazione offerta?');"><input type="hidden" name="azione" value="delete"><input type="hidden" name="id" value="<?= (int)$offerta['id'] ?>"><button class="btn btn-sm btn-outline-danger" type="submit" title="Elimina" aria-label="Elimina"><?= menuIcon('Elimina') ?></button></form></div></td>
+</tr>
+<?php endforeach; ?>
 </tbody></table></div></div>
+<?php endif; ?>
 </main></div></div>
 
 <div class="modal fade" id="modalNuovaAzienda" tabindex="-1" aria-hidden="true">
@@ -481,18 +878,54 @@ renderHeader('Simplex - Offerte');
           <input type="hidden" name="azione" value="ajax_create_azienda">
           <div id="nuovaAziendaError" class="alert alert-danger d-none"></div>
           <div class="row g-2">
-            <div class="col-md-4"><label class="form-label">Partita IVA *</label><input class="form-control" name="partita_iva" maxlength="11" required></div>
-            <div class="col-md-4"><label class="form-label">Codice Fiscale</label><input class="form-control" name="codice_fiscale" maxlength="16"></div>
+            <div class="col-md-4"><label class="form-label">Partita IVA</label><input class="form-control" name="partita_iva" maxlength="11"><div class="form-text">Usata per verificare che l'azienda non sia già presente.</div></div>
+            <div class="col-md-4"><label class="form-label">Codice Fiscale (obbligatorio senza Partita IVA)</label><input class="form-control" name="codice_fiscale" maxlength="16"></div>
             <div class="col-md-4"><label class="form-label">Ragione Sociale *</label><input class="form-control" name="ragione_sociale" maxlength="30" required></div>
             <div class="col-md-6"><label class="form-label">Tipologia Azienda *</label><select class="form-select" name="tipologia_azienda[]" multiple required><?php foreach($TIPOLOGIE_AZIENDA as $tip): ?><option value="<?= htmlspecialchars($tip) ?>"><?= htmlspecialchars($tip) ?></option><?php endforeach; ?></select></div>
-            <div class="col-md-3"><label class="form-label">Organico Medio *</label><input class="form-control" name="organico_medio" maxlength="30" required></div>
-            <div class="col-md-3"><label class="form-label">Fatturato *</label><input type="number" step="0.01" min="0" class="form-control" name="fatturato" required></div>
+            <div class="col-md-3">
+              <label class="form-label">Numero di Dipendenti *</label>
+              <select class="form-select" name="organico_medio" required>
+                <option value="">-- Seleziona --</option>
+                <?php foreach($ORGANICO_OPTIONS as $option): ?>
+                  <option value="<?= htmlspecialchars($option) ?>"><?= htmlspecialchars($option) ?></option>
+                <?php endforeach; ?>
+              </select>
+            </div>
+            <div class="col-md-3">
+              <label class="form-label">Fatturato *</label>
+              <select class="form-select" name="fatturato" required>
+                <option value="">-- Seleziona --</option>
+                <?php foreach($FATTURATO_OPTIONS as $option): ?>
+                  <option value="<?= htmlspecialchars($option) ?>"><?= htmlspecialchars($option) ?></option>
+                <?php endforeach; ?>
+              </select>
+            </div>
             <div class="col-md-4"><label class="form-label">Telefono</label><input class="form-control" name="telefono"></div>
             <div class="col-md-4"><label class="form-label">Email</label><input type="email" class="form-control" name="email"></div>
             <div class="col-md-4"><label class="form-label">PEC</label><input class="form-control" name="pec"></div>
-            <div class="col-md-6"><label class="form-label">Località</label><input class="form-control" name="localita"></div>
-            <div class="col-md-2"><label class="form-label">Prov.</label><input class="form-control" name="provincia" maxlength="2"></div>
-            <div class="col-md-4"><label class="form-label">Categoria</label><input class="form-control" name="categoria"></div>
+            <div class="col-md-4">
+              <label class="form-label">Regione</label>
+              <select class="form-select js-regione" name="regione">
+                <option value="">-- Seleziona --</option>
+                <?php foreach($REGIONI_ITALIA as $regione): ?>
+                  <option value="<?= htmlspecialchars($regione) ?>"><?= htmlspecialchars($regione) ?></option>
+                <?php endforeach; ?>
+              </select>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">Provincia</label>
+              <select class="form-select js-provincia" name="provincia">
+                <option value="">-- Seleziona prima la regione --</option>
+              </select>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">Comuni</label>
+              <select class="form-select js-comune" name="comune">
+                <option value="">-- Seleziona prima la provincia --</option>
+              </select>
+            </div>
+            <div class="col-md-6"><label class="form-label">Settore di Attività</label><select class="form-select" name="categoria"><option value="">-- Seleziona --</option><?php foreach(AZIENDA_SETTORI as $settore): ?><option value="<?= htmlspecialchars($settore) ?>"><?= htmlspecialchars($settore) ?></option><?php endforeach; ?></select></div>
+            <div class="col-md-6"><label class="form-label">RCO</label><select class="form-select" name="rco_utente_id"><option value="">-- Seleziona --</option><?php foreach($utentiRcoAzienda as $u): ?><option value="<?= (int)$u['id'] ?>"><?= htmlspecialchars($u['nome'].' '.$u['cognome']) ?></option><?php endforeach; ?></select></div>
           </div>
         </div>
         <div class="modal-footer">
@@ -505,55 +938,216 @@ renderHeader('Simplex - Offerte');
 </div>
 
 <script>
-const dettagliPerServizio = <?= json_encode($DETTAGLI_SERVIZIO, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
-const dettaglioPreselezionato = <?= json_encode($formData['dettaglio_servizio'] ?? '', JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
+const dettagliPerServizio = <?= json_encode($DETTAGLI_SERVIZIO, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
+const dettaglioPreselezionato = <?= json_encode($formData['dettaglio_servizio'] ?? '', JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
 const servizioSelect=document.getElementById('servizio'); const detSel=document.getElementById('dettaglio_servizio'); const lbl=document.getElementById('label-dettaglio');
 function renderDettaglio(){ if(!servizioSelect||!detSel||!lbl) return; const s=servizioSelect.value; const op=dettagliPerServizio[s]||[]; lbl.textContent=s==='SISTEMI DI GESTIONE AZIENDALE'?'SottoServizio *':'Servizio Specifico *'; detSel.innerHTML='<option value="">-- Seleziona --</option>'; op.forEach(v=>{const o=document.createElement('option');o.value=v;o.textContent=v;if(v===dettaglioPreselezionato)o.selected=true;detSel.appendChild(o);}); }
 if(servizioSelect){servizioSelect.addEventListener('change',renderDettaglio); renderDettaglio();}
 const dataOff=document.getElementById('data_offerta'), valIn=document.getElementById('validita_giorni'), scadIn=document.getElementById('data_scadenza');
-function addDays(d,days){const x=new Date(d+'T00:00:00');x.setDate(x.getDate()+Number(days));return x.toISOString().slice(0,10);} function daysBetween(a,b){const d1=new Date(a+'T00:00:00');const d2=new Date(b+'T00:00:00');return Math.round((d2-d1)/(1000*60*60*24));}
-if(dataOff&&valIn&&scadIn){valIn.addEventListener('input',()=>{if(dataOff.value&&valIn.value)scadIn.value=addDays(dataOff.value,valIn.value)});scadIn.addEventListener('change',()=>{if(dataOff.value&&scadIn.value){const d=daysBetween(dataOff.value,scadIn.value);if(d>0)valIn.value=d;}});}
-const statoSel=document.getElementById('stato_offerta'); const consulBox=document.getElementById('box-consulente'); const consSel=document.getElementById('consulente_incaricato');
-function toggleCons(){ if(!statoSel||!consulBox||!consSel) return; const on=statoSel.value==='Aggiudicata'; consulBox.style.display=on?'block':'none'; consSel.required=on; if(!on) consSel.value=''; }
-if(statoSel){statoSel.addEventListener('change',toggleCons); toggleCons();}
+function parseDate(value){if(!/^\d{4}-\d{2}-\d{2}$/.test(value||''))return null;const date=new Date(`${value}T00:00:00Z`);return Number.isNaN(date.getTime())?null:date;}
+function addDays(value,days){const date=parseDate(value);if(!date)return '';date.setUTCDate(date.getUTCDate()+Number(days));return date.toISOString().slice(0,10);}
+function daysBetween(a,b){const d1=parseDate(a),d2=parseDate(b);return d1&&d2?Math.round((d2-d1)/86400000):0;}
+if(dataOff&&valIn&&scadIn){
+    const updateExpiry=()=>{if(dataOff.value&&valIn.value)scadIn.value=addDays(dataOff.value,valIn.value);};
+    valIn.addEventListener('input',updateExpiry);
+    dataOff.addEventListener('change',updateExpiry);
+    scadIn.addEventListener('change',()=>{if(dataOff.value&&scadIn.value){const days=daysBetween(dataOff.value,scadIn.value);if(days>0)valIn.value=days;}});
+}
+const statoSel=document.getElementById('stato_offerta');
+const responsabileAreaBox=document.getElementById('box-responsabile-area'); const responsabileAreaSel=document.getElementById('responsabile_area_utente_id');
+function toggleResponsabileArea(){ if(!statoSel) return; const on=statoSel.value==='Aggiudicata'; if(responsabileAreaBox&&responsabileAreaSel){responsabileAreaBox.style.display=on?'block':'none';responsabileAreaSel.required=on;if(!on)responsabileAreaSel.value='';} }
+if(statoSel){statoSel.addEventListener('change',toggleResponsabileArea); toggleResponsabileArea();}
 const aziendaSel=document.getElementById('azienda_id');
+const sedeErogazioneInput=document.getElementById('sede_erogazione_servizio');
+function resetSediErogazione(placeholder){
+    if(!sedeErogazioneInput) return;
+    sedeErogazioneInput.innerHTML='';
+    const opt=document.createElement('option');
+    opt.value='';
+    opt.textContent=placeholder;
+    sedeErogazioneInput.appendChild(opt);
+}
+async function valorizzaSediAzienda(){
+    if(!aziendaSel||!sedeErogazioneInput) return;
+    const aziendaId=aziendaSel.value;
+    const selected=sedeErogazioneInput.dataset.selected||sedeErogazioneInput.value||'';
+    if(!aziendaId){ resetSediErogazione('-- Seleziona prima l\'azienda --'); return; }
+    try{
+        const resp=await fetch(`offerte.php?ajax=azienda_sedi&id=${encodeURIComponent(aziendaId)}`, {headers:{'Accept':'application/json','X-Requested-With':'XMLHttpRequest'}});
+        const data=await resp.json();
+        resetSediErogazione('-- Seleziona una sede --');
+        const sedi=(resp.ok&&data&&data.ok&&Array.isArray(data.sedi))?data.sedi:[];
+        sedi.forEach((sede)=>{
+            const opt=document.createElement('option');
+            opt.value=sede.value||'';
+            opt.textContent=sede.label||sede.value||'';
+            if(opt.value===selected) opt.selected=true;
+            sedeErogazioneInput.appendChild(opt);
+        });
+        sedeErogazioneInput.dataset.selected='';
+    }catch(error){
+        resetSediErogazione('Errore caricamento sedi');
+    }
+}
+if(aziendaSel){aziendaSel.addEventListener('change',valorizzaSediAzienda); if(aziendaSel.value) valorizzaSediAzienda();}
 const formNuovaAzienda=document.getElementById('formNuovaAzienda');
 const nuovaAziendaError=document.getElementById('nuovaAziendaError');
+
+const comuniDatasetUrl = 'https://raw.githubusercontent.com/matteocontrini/comuni-json/master/comuni.json';
+let comuniItaliaCache = null;
+function normalizeProvincia(item){ return (item?.provincia?.sigla || item?.sigla || '').toString().trim().toUpperCase(); }
+function normalizeRegione(item){ return (item?.regione?.nome || item?.regione || '').toString().trim(); }
+function normalizeComune(item){ return (item?.nome || item?.comune || '').toString().trim(); }
+async function loadComuniDataset(){
+    if(comuniItaliaCache) return comuniItaliaCache;
+    const response = await fetch(comuniDatasetUrl);
+    if(!response.ok) throw new Error('Impossibile caricare comuni/province');
+    comuniItaliaCache = await response.json();
+    return comuniItaliaCache;
+}
+function fillSelectOptions(select, values, placeholder){
+    if(!select) return;
+    select.innerHTML = `<option value="">${placeholder}</option>`;
+    values.forEach((value)=>{
+        const option=document.createElement('option');
+        option.value=value;
+        option.textContent=value;
+        select.appendChild(option);
+    });
+}
+async function setupGeoSelectors(scope){
+    const regioneSelect = scope.querySelector('.js-regione');
+    const provinciaSelect = scope.querySelector('.js-provincia');
+    const comuneSelect = scope.querySelector('.js-comune');
+    if(!regioneSelect||!provinciaSelect||!comuneSelect) return;
+    try{
+        const dataset = await loadComuniDataset();
+        const refreshProvince = ()=>{
+            const regione = regioneSelect.value;
+            const province = [...new Set(dataset.filter((item)=>normalizeRegione(item)===regione).map(normalizeProvincia).filter(Boolean))].sort();
+            fillSelectOptions(provinciaSelect, province, regione ? '-- Seleziona --' : '-- Seleziona prima la regione --');
+            fillSelectOptions(comuneSelect, [], '-- Seleziona prima la provincia --');
+        };
+        const refreshComuni = ()=>{
+            const regione = regioneSelect.value;
+            const provincia = provinciaSelect.value;
+            const comuni = [...new Set(dataset.filter((item)=>normalizeRegione(item)===regione && normalizeProvincia(item)===provincia).map(normalizeComune).filter(Boolean))]
+                .sort((a,b)=>a.localeCompare(b,'it'));
+            fillSelectOptions(comuneSelect, comuni, provincia ? '-- Seleziona --' : '-- Seleziona prima la provincia --');
+        };
+        regioneSelect.addEventListener('change',refreshProvince);
+        provinciaSelect.addEventListener('change',refreshComuni);
+    }catch(error){
+        fillSelectOptions(provinciaSelect, [], 'Errore caricamento province');
+        fillSelectOptions(comuneSelect, [], 'Errore caricamento comuni');
+    }
+}
 if(formNuovaAzienda&&aziendaSel){
+    setupGeoSelectors(formNuovaAzienda);
     formNuovaAzienda.addEventListener('submit',async (e)=>{
         e.preventDefault();
         nuovaAziendaError.classList.add('d-none');
-        const fd=new FormData(formNuovaAzienda);
-        const resp=await fetch('offerte.php',{method:'POST',body:fd});
-        const data=await resp.json();
-        if(!data.ok){
-            nuovaAziendaError.textContent=(data.errors||['Errore nel salvataggio azienda.']).join(' ');
+        try{
+            const fd=new FormData(formNuovaAzienda);
+            const resp=await fetch('offerte.php',{
+                method:'POST',
+                body:fd,
+                credentials:'same-origin',
+                headers:{'Accept':'application/json','X-Requested-With':'XMLHttpRequest'}
+            });
+            const raw=await resp.text();
+            let data=null;
+            try{
+                data=JSON.parse(raw);
+            }catch(parseError){
+                throw new Error('Risposta non JSON dal server: ' + raw.slice(0, 200));
+            }
+            if(!resp.ok || !data || !data.ok){
+                const errori=(data&&Array.isArray(data.errors)&&data.errors.length>0)?data.errors:['Errore nel salvataggio azienda.'];
+                throw new Error(errori.join(' '));
+            }
+            const opt=document.createElement('option');
+            opt.value=String(data.id);
+            opt.textContent=data.ragione_sociale;
+            opt.selected=true;
+            aziendaSel.appendChild(opt);
+            await valorizzaSediAzienda();
+            formNuovaAzienda.reset();
+            const modalEl=document.getElementById('modalNuovaAzienda');
+            const modal=bootstrap.Modal.getInstance(modalEl);
+            if(modal){ modal.hide(); }
+        }catch(error){
+            nuovaAziendaError.textContent=error instanceof Error ? error.message : 'Errore inatteso durante il salvataggio azienda.';
             nuovaAziendaError.classList.remove('d-none');
-            return;
         }
-        const opt=document.createElement('option');
-        opt.value=String(data.id);
-        opt.textContent=data.ragione_sociale;
-        opt.selected=true;
-        aziendaSel.appendChild(opt);
-        formNuovaAzienda.reset();
-        const modalEl=document.getElementById('modalNuovaAzienda');
-        const modal=bootstrap.Modal.getInstance(modalEl);
-        if(modal){ modal.hide(); }
     });
 }
 const tabellaMomentiOfferta=document.querySelector('#tabella-momenti-offerta tbody');
 const btnAggiungiMomentoOfferta=document.getElementById('btn-aggiungi-momento-offerta');
+function aggiornaCalcoloMomento(tr){
+    if(!tr) return;
+    const valoreInput=tr.querySelector('.momento-valore');
+    const costoInput=tr.querySelector('.momento-costo');
+    const oreInput=tr.querySelector('.momento-ore');
+    const giorniInput=tr.querySelector('.momento-giorni');
+    if(!valoreInput||!costoInput||!oreInput||!giorniInput) return;
+    const valore=parseFloat((valoreInput.value||'0').replace(',','.'));
+    const costo=parseFloat((costoInput.value||'0').replace(',','.'));
+    let giorni=0;
+    let ore=0;
+    if(Number.isFinite(valore)&&valore>0&&Number.isFinite(costo)&&costo>0){
+        giorni=Math.floor(costo/valore);
+        const costoResiduo=costo-(giorni*valore);
+        ore=Math.ceil((costoResiduo/valore)*8);
+        if(ore>=8){
+            giorni+=Math.floor(ore/8);
+            ore=ore%8;
+        }
+    }
+    giorniInput.value=giorni.toString();
+    oreInput.value=ore.toString();
+}
+const momentiSubtotale=document.getElementById('momenti_subtotale');
+const momentiTotale=document.getElementById('momenti_totale');
+const scontoPercentuale=document.getElementById('sconto_percentuale');
+function formatEuro(value){return new Intl.NumberFormat('it-IT',{style:'currency',currency:'EUR'}).format(value||0);}
+function aggiornaTotaliMomenti(){
+    if(!tabellaMomentiOfferta) return;
+    let subtotale=0;
+    tabellaMomentiOfferta.querySelectorAll('.momento-costo').forEach((input)=>{
+        const costo=parseFloat((input.value||'0').replace(',','.'));
+        if(Number.isFinite(costo)&&costo>0) subtotale+=costo;
+    });
+    const sconto=parseFloat((scontoPercentuale?.value||'0').replace(',','.'));
+    const scontoValido=Number.isFinite(sconto)?Math.min(Math.max(sconto,0),100):0;
+    const totale=subtotale-(subtotale*scontoValido/100);
+    if(momentiSubtotale) momentiSubtotale.value=formatEuro(subtotale);
+    if(momentiTotale) momentiTotale.value=formatEuro(totale);
+}
 if(tabellaMomentiOfferta&&btnAggiungiMomentoOfferta){
+    tabellaMomentiOfferta.querySelectorAll('tr').forEach((tr)=>aggiornaCalcoloMomento(tr));
+    aggiornaTotaliMomenti();
+    tabellaMomentiOfferta.addEventListener('input',(e)=>{
+        const row=e.target.closest('tr');
+        if(!row) return;
+        if(e.target.classList.contains('momento-valore')||e.target.classList.contains('momento-costo')){
+            aggiornaCalcoloMomento(row);
+        }
+        aggiornaTotaliMomenti();
+    });
     btnAggiungiMomentoOfferta.addEventListener('click',()=>{
         const tr=document.createElement('tr');
-        tr.innerHTML='<td><input type=\"date\" class=\"form-control\" name=\"momento_data_momento[]\"></td><td><select class=\"form-select\" name=\"momento_tipologia[]\"><option value=\"Apertura\">Apertura</option><option value=\"Chiusura\">Chiusura</option></select></td><td><input type=\"number\" min=\"0\" step=\"0.01\" class=\"form-control\" name=\"momento_valore_giornaliero_uomo[]\"></td><td><input type=\"number\" min=\"0\" step=\"0.01\" class=\"form-control\" name=\"momento_ore[]\" value=\"0\"></td><td><input type=\"number\" min=\"0\" step=\"0.01\" class=\"form-control\" name=\"momento_giorni[]\" value=\"0\"></td><td><button type=\"button\" class=\"btn btn-sm btn-outline-danger btn-rimuovi-momento\">✕</button></td>';
+        tr.innerHTML='<td><input type=\"date\" class=\"form-control\" name=\"momento_data_momento[]\" placeholder=\"gg/mm/aaaa\"></td><td><input class=\"form-control\" name=\"momento_tipologia[]\" list=\"tipologie-momento\" maxlength=\"120\" placeholder=\"Seleziona o scrivi una tipologia\"></td><td><input type=\"number\" min=\"0\" step=\"0.01\" class=\"form-control momento-costo\" name=\"momento_costo_totale[]\"></td><td><input type=\"number\" min=\"0\" step=\"0.01\" class=\"form-control momento-valore\" name=\"momento_valore_giornaliero_uomo[]\"></td><td><input type=\"number\" min=\"0\" step=\"1\" class=\"form-control momento-giorni\" name=\"momento_giorni[]\" value=\"0\" readonly></td><td><input type=\"number\" min=\"0\" step=\"1\" class=\"form-control momento-ore\" name=\"momento_ore[]\" value=\"0\" readonly></td><td><button type=\"button\" class=\"btn btn-sm btn-outline-danger btn-rimuovi-momento\">✕</button></td>';
         tabellaMomentiOfferta.appendChild(tr);
+        aggiornaCalcoloMomento(tr);
+        aggiornaTotaliMomenti();
     });
+    if(scontoPercentuale){scontoPercentuale.addEventListener('input',aggiornaTotaliMomenti);}
     tabellaMomentiOfferta.addEventListener('click',(e)=>{
         const btn=e.target.closest('.btn-rimuovi-momento');
         if(!btn) return;
         btn.closest('tr')?.remove();
+        aggiornaTotaliMomenti();
     });
 }
 </script>

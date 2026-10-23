@@ -2,12 +2,14 @@
 require_once __DIR__ . '/config/database.php';
 require_once __DIR__ . '/includes/layout.php';
 require_once __DIR__ . '/includes/auth.php';
+require_once __DIR__ . '/includes/company.php';
 
-$TIPOLOGIE_AZIENDA = ['Potenziale Cliente', 'Promotore', 'Fornitore', 'Partner'];
-$CATEGORIE_MERCEOLOGICHE = [
-    'Agroalimentare', 'Commerciale', 'Commercio', 'Edile', 'Ente', 'Formazione', 'Fornitore', 'Impiantistica',
-    'Manifatturiere', 'Officine', 'Privato', 'Sanità', 'Servizi', 'Strategico', 'Trasporti', 'Turismo',
-];
+$TIPOLOGIE_AZIENDA = ['Promotore', 'Fornitore', 'Partner', 'Cliente'];
+$TIPI_SEDE = ['Legale', 'Amministrativa', 'Operativa'];
+$ORGANICO_OPTIONS = AZIENDA_ORGANICO_OPTIONS;
+$FATTURATO_OPTIONS = AZIENDA_FATTURATO_OPTIONS;
+$REGIONI_ITALIA = ['Abruzzo', 'Basilicata', 'Calabria', 'Campania', 'Emilia-Romagna', 'Friuli Venezia Giulia', 'Lazio', 'Liguria', 'Lombardia', 'Marche', 'Molise', 'Piemonte', 'Puglia', 'Sardegna', 'Sicilia', 'Toscana', 'Trentino-Alto Adige/Südtirol', 'Umbria', "Valle d'Aosta/Vallée d'Aoste", 'Veneto'];
+$CATEGORIE_MERCEOLOGICHE = AZIENDA_SETTORI;
 $EA_OPTIONS = [
     'Agricoltura e pesca',
     'Estrazione minerali (cave, miniere e giacimenti petroliferi)',
@@ -49,7 +51,7 @@ if (!isLoggedIn()) {
 $pdo->exec(
     "CREATE TABLE IF NOT EXISTS aziende (
         id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-        partita_iva VARCHAR(11) NOT NULL UNIQUE,
+        partita_iva VARCHAR(11) NULL UNIQUE,
         codice_fiscale VARCHAR(16) NULL,
         ragione_sociale VARCHAR(30) NOT NULL,
         iban VARCHAR(34) NULL,
@@ -69,7 +71,7 @@ $pdo->exec(
         categoria VARCHAR(50) NULL,
         ea VARCHAR(255) NULL,
         organico_medio VARCHAR(30) NOT NULL,
-        fatturato DECIMAL(15,2) NOT NULL,
+        fatturato VARCHAR(20) NOT NULL,
         conosciuto_come VARCHAR(50) NULL,
         principali_prodotti TEXT NULL,
         note TEXT NULL,
@@ -82,8 +84,74 @@ $pdo->exec(
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
 );
 
+ensureCompanyIdentifiers($pdo);
+
+$columnsAziende = $pdo->query('SHOW COLUMNS FROM aziende')->fetchAll(PDO::FETCH_COLUMN, 0);
+if (!in_array('regione', $columnsAziende, true)) {
+    $pdo->exec("ALTER TABLE aziende ADD COLUMN regione VARCHAR(60) NULL AFTER cap");
+}
+if (!in_array('comune', $columnsAziende, true)) {
+    $pdo->exec("ALTER TABLE aziende ADD COLUMN comune VARCHAR(120) NULL AFTER provincia");
+}
+$pdo->exec("ALTER TABLE aziende MODIFY COLUMN fatturato VARCHAR(20) NOT NULL");
+
+$pdo->exec(
+    "CREATE TABLE IF NOT EXISTS aziende_sedi (
+        id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+        azienda_id INT UNSIGNED NOT NULL,
+        tipo_sede VARCHAR(30) NOT NULL,
+        via VARCHAR(120) NOT NULL,
+        numero_civico VARCHAR(10) NOT NULL,
+        cap VARCHAR(10) NOT NULL,
+        regione VARCHAR(60) NOT NULL,
+        provincia VARCHAR(2) NOT NULL,
+        comune VARCHAR(120) NOT NULL,
+        creato_il TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        aggiornato_il TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        CONSTRAINT fk_aziende_sedi_azienda FOREIGN KEY (azienda_id) REFERENCES aziende(id) ON DELETE CASCADE
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
+);
+
+$pdo->exec(
+    "CREATE TABLE IF NOT EXISTS aziende_referenti (
+        id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+        azienda_id INT UNSIGNED NOT NULL,
+        nome_cognome VARCHAR(120) NOT NULL,
+        telefono VARCHAR(30) NULL,
+        email VARCHAR(100) NULL,
+        ruolo VARCHAR(80) NULL,
+        creato_il TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        aggiornato_il TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        CONSTRAINT fk_aziende_referenti_azienda FOREIGN KEY (azienda_id) REFERENCES aziende(id) ON DELETE CASCADE
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
+);
+
+$pdo->exec(
+    "CREATE TABLE IF NOT EXISTS aziende_file (
+        id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+        azienda_id INT UNSIGNED NOT NULL,
+        nome_originale VARCHAR(255) NOT NULL,
+        nome_salvato VARCHAR(255) NOT NULL,
+        mime_type VARCHAR(100) NULL,
+        dimensione_bytes BIGINT UNSIGNED NOT NULL DEFAULT 0,
+        caricato_il TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT fk_aziende_file_azienda FOREIGN KEY (azienda_id) REFERENCES aziende(id) ON DELETE CASCADE
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
+);
+
+if (!in_array('promotore_utente_id', $columnsAziende, true)) {
+    $pdo->exec("ALTER TABLE aziende
+        ADD COLUMN promotore_utente_id INT UNSIGNED NULL,
+        ADD CONSTRAINT fk_azienda_promotore_utente FOREIGN KEY (promotore_utente_id) REFERENCES utenti(id) ON DELETE SET NULL");
+}
+
 $utenti = $pdo->query('SELECT id, nome, cognome FROM utenti ORDER BY nome, cognome')->fetchAll();
-$aziendePromotori = $pdo->query("SELECT id, ragione_sociale FROM aziende WHERE FIND_IN_SET('Promotore', tipologia_azienda) > 0 ORDER BY ragione_sociale")->fetchAll();
+// Include secondary roles as well as the primary role for existing users.
+$utentiRco = companyRcoUsers($pdo);
+$utentiPromotori = $pdo->query("SELECT u.id, u.nome, u.cognome FROM utenti u
+    WHERE u.ruolo = 'Promotore'
+       OR EXISTS (SELECT 1 FROM utenti_ruoli ur WHERE ur.utente_id = u.id AND ur.ruolo = 'Promotore')
+    ORDER BY u.nome, u.cognome")->fetchAll();
 
 $action = $_GET['action'] ?? 'list';
 $viewId = isset($_GET['view']) ? (int) $_GET['view'] : 0;
@@ -91,11 +159,27 @@ $editId = isset($_GET['edit']) ? (int) $_GET['edit'] : 0;
 
 $aziendaInModifica = null;
 $aziendaInVisualizzazione = null;
+$filesAzienda = [];
+$sediAzienda = [];
+$referentiAzienda = [];
+$sediForm = [];
+$referentiForm = [];
 
 if ($viewId > 0) {
     $stmt = $pdo->prepare('SELECT * FROM aziende WHERE id = :id');
     $stmt->execute([':id' => $viewId]);
     $aziendaInVisualizzazione = $stmt->fetch();
+    if ($aziendaInVisualizzazione) {
+        $stmtFiles = $pdo->prepare('SELECT * FROM aziende_file WHERE azienda_id = :azienda_id ORDER BY caricato_il DESC');
+        $stmtFiles->execute([':azienda_id' => $viewId]);
+        $filesAzienda = $stmtFiles->fetchAll();
+        $stmtSedi = $pdo->prepare('SELECT * FROM aziende_sedi WHERE azienda_id = :azienda_id ORDER BY FIELD(tipo_sede, "Legale", "Amministrativa", "Operativa"), id');
+        $stmtSedi->execute([':azienda_id' => $viewId]);
+        $sediAzienda = $stmtSedi->fetchAll();
+        $stmtReferenti = $pdo->prepare('SELECT * FROM aziende_referenti WHERE azienda_id = :azienda_id ORDER BY id');
+        $stmtReferenti->execute([':azienda_id' => $viewId]);
+        $referentiAzienda = $stmtReferenti->fetchAll();
+    }
 }
 
 if ($editId > 0) {
@@ -104,6 +188,13 @@ if ($editId > 0) {
     $aziendaInModifica = $stmt->fetch();
     if (!$aziendaInModifica) {
         $errors[] = 'Azienda da modificare non trovata.';
+    } else {
+        $stmtSedi = $pdo->prepare('SELECT * FROM aziende_sedi WHERE azienda_id = :azienda_id ORDER BY FIELD(tipo_sede, "Legale", "Amministrativa", "Operativa"), id');
+        $stmtSedi->execute([':azienda_id' => $editId]);
+        $sediForm = $stmtSedi->fetchAll();
+        $stmtReferenti = $pdo->prepare('SELECT * FROM aziende_referenti WHERE azienda_id = :azienda_id ORDER BY id');
+        $stmtReferenti->execute([':azienda_id' => $editId]);
+        $referentiForm = $stmtReferenti->fetchAll();
     }
 }
 
@@ -119,8 +210,69 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
 
+    if ($azione === 'upload_file') {
+        $idAzienda = (int) ($_POST['id'] ?? 0);
+        if ($idAzienda <= 0) {
+            $errors[] = 'Azienda non valida per upload file.';
+        } elseif (!isset($_FILES['allegato']) || !is_array($_FILES['allegato'])) {
+            $errors[] = 'Nessun file ricevuto.';
+        } else {
+            $file = $_FILES['allegato'];
+            if ((int) ($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
+                $errors[] = 'Errore durante il caricamento del file.';
+            } else {
+                $uploadBase = __DIR__ . '/uploads/aziende/' . $idAzienda;
+                if (!is_dir($uploadBase) && !mkdir($uploadBase, 0775, true) && !is_dir($uploadBase)) {
+                    $errors[] = 'Impossibile creare la cartella di upload.';
+                } else {
+                    $originalName = basename((string) $file['name']);
+                    $ext = pathinfo($originalName, PATHINFO_EXTENSION);
+                    $storedName = uniqid('file_', true) . ($ext ? '.' . $ext : '');
+                    $target = $uploadBase . '/' . $storedName;
+                    if (!move_uploaded_file((string) $file['tmp_name'], $target)) {
+                        $errors[] = 'Impossibile salvare il file sul server.';
+                    } else {
+                        $mime = function_exists('mime_content_type') ? mime_content_type($target) : null;
+                        $size = filesize($target);
+                        $stmtIns = $pdo->prepare(
+                            'INSERT INTO aziende_file (azienda_id, nome_originale, nome_salvato, mime_type, dimensione_bytes)
+                             VALUES (:azienda_id, :nome_originale, :nome_salvato, :mime_type, :dimensione_bytes)'
+                        );
+                        $stmtIns->execute([
+                            ':azienda_id' => $idAzienda,
+                            ':nome_originale' => $originalName,
+                            ':nome_salvato' => $storedName,
+                            ':mime_type' => $mime,
+                            ':dimensione_bytes' => (int) $size,
+                        ]);
+                        $success = 'File caricato correttamente.';
+                        $viewId = $idAzienda;
+                        $stmt = $pdo->prepare('SELECT * FROM aziende WHERE id = :id');
+                        $stmt->execute([':id' => $viewId]);
+                        $aziendaInVisualizzazione = $stmt->fetch();
+                        $stmtFiles = $pdo->prepare('SELECT * FROM aziende_file WHERE azienda_id = :azienda_id ORDER BY caricato_il DESC');
+                        $stmtFiles->execute([':azienda_id' => $viewId]);
+                        $filesAzienda = $stmtFiles->fetchAll();
+                        $stmtSedi = $pdo->prepare('SELECT * FROM aziende_sedi WHERE azienda_id = :azienda_id ORDER BY FIELD(tipo_sede, "Legale", "Amministrativa", "Operativa"), id');
+                        $stmtSedi->execute([':azienda_id' => $viewId]);
+                        $sediAzienda = $stmtSedi->fetchAll();
+                        $stmtReferenti = $pdo->prepare('SELECT * FROM aziende_referenti WHERE azienda_id = :azienda_id ORDER BY id');
+                        $stmtReferenti->execute([':azienda_id' => $viewId]);
+                        $referentiAzienda = $stmtReferenti->fetchAll();
+                    }
+                }
+            }
+        }
+    }
+
     if ($azione === 'save') {
         $id = (int) ($_POST['id'] ?? 0);
+        $valoriAziendaEsistenti = [];
+        if ($id > 0) {
+            $stmtValori = $pdo->prepare('SELECT organico_medio, fatturato, categoria FROM aziende WHERE id = :id');
+            $stmtValori->execute([':id' => $id]);
+            $valoriAziendaEsistenti = $stmtValori->fetch() ?: [];
+        }
         $partitaIva = trim($_POST['partita_iva'] ?? '');
         $codiceFiscale = strtoupper(trim($_POST['codice_fiscale'] ?? ''));
         $ragioneSociale = trim($_POST['ragione_sociale'] ?? '');
@@ -131,29 +283,79 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $pec = trim($_POST['pec'] ?? '');
         $email = trim($_POST['email'] ?? '');
         $urlSito = trim($_POST['url_sito'] ?? '');
-        $via = trim($_POST['via'] ?? '');
-        $numeroCivico = trim($_POST['numero_civico'] ?? '');
-        $cap = trim($_POST['cap'] ?? '');
-        $localita = trim($_POST['localita'] ?? '');
-        $provincia = strtoupper(trim($_POST['provincia'] ?? ''));
+        $sediInput = [];
+        $sedeTipi = $_POST['sede_tipo'] ?? [];
+        $sedeVie = $_POST['sede_via'] ?? [];
+        $sedeNumeriCivici = $_POST['sede_numero_civico'] ?? [];
+        $sedeCap = $_POST['sede_cap'] ?? [];
+        $sedeRegioni = $_POST['sede_regione'] ?? [];
+        $sedeProvince = $_POST['sede_provincia'] ?? [];
+        $sedeComuni = $_POST['sede_comune'] ?? [];
+        $maxSedi = max(
+            is_array($sedeTipi) ? count($sedeTipi) : 0,
+            is_array($sedeVie) ? count($sedeVie) : 0,
+            is_array($sedeNumeriCivici) ? count($sedeNumeriCivici) : 0,
+            is_array($sedeCap) ? count($sedeCap) : 0,
+            is_array($sedeRegioni) ? count($sedeRegioni) : 0,
+            is_array($sedeProvince) ? count($sedeProvince) : 0,
+            is_array($sedeComuni) ? count($sedeComuni) : 0
+        );
+        for ($i = 0; $i < $maxSedi; $i++) {
+            $sede = [
+                'tipo_sede' => trim((string)($sedeTipi[$i] ?? '')),
+                'via' => trim((string)($sedeVie[$i] ?? '')),
+                'numero_civico' => trim((string)($sedeNumeriCivici[$i] ?? '')),
+                'cap' => trim((string)($sedeCap[$i] ?? '')),
+                'regione' => trim((string)($sedeRegioni[$i] ?? '')),
+                'provincia' => strtoupper(trim((string)($sedeProvince[$i] ?? ''))),
+                'comune' => trim((string)($sedeComuni[$i] ?? '')),
+            ];
+            if (implode('', $sede) === '') {
+                continue;
+            }
+            $sediInput[] = $sede;
+        }
+        $sediForm = $sediInput;
+
+        $referentiInput = [];
+        $referenteNomi = $_POST['referente_nome_cognome'] ?? [];
+        $referenteTelefoni = $_POST['referente_telefono'] ?? [];
+        $referenteEmail = $_POST['referente_email'] ?? [];
+        $referenteRuoli = $_POST['referente_ruolo'] ?? [];
+        $maxReferenti = max(
+            is_array($referenteNomi) ? count($referenteNomi) : 0,
+            is_array($referenteTelefoni) ? count($referenteTelefoni) : 0,
+            is_array($referenteEmail) ? count($referenteEmail) : 0,
+            is_array($referenteRuoli) ? count($referenteRuoli) : 0
+        );
+        for ($i = 0; $i < $maxReferenti; $i++) {
+            $referente = [
+                'nome_cognome' => trim((string)($referenteNomi[$i] ?? '')),
+                'telefono' => trim((string)($referenteTelefoni[$i] ?? '')),
+                'email' => trim((string)($referenteEmail[$i] ?? '')),
+                'ruolo' => trim((string)($referenteRuoli[$i] ?? '')),
+            ];
+            if (implode('', $referente) === '') {
+                continue;
+            }
+            $referentiInput[] = $referente;
+        }
+        $referentiForm = $referentiInput;
+
         $rcoUtenteId = ($_POST['rco_utente_id'] ?? '') !== '' ? (int) $_POST['rco_utente_id'] : null;
         $segnalataDaUtenteId = ($_POST['segnalata_da_utente_id'] ?? '') !== '' ? (int) $_POST['segnalata_da_utente_id'] : null;
         $categoria = trim($_POST['categoria'] ?? '');
         $ea = trim($_POST['ea'] ?? '');
         $organicoMedio = trim($_POST['organico_medio'] ?? '');
-        $fatturato = str_replace(',', '.', trim($_POST['fatturato'] ?? ''));
+        $fatturato = trim($_POST['fatturato'] ?? '');
         $conosciutoCome = trim($_POST['conosciuto_come'] ?? '');
         $principaliProdotti = trim($_POST['principali_prodotti'] ?? '');
         $note = trim($_POST['note'] ?? '');
-        $promotoreAziendaId = ($_POST['promotore_azienda_id'] ?? '') !== '' ? (int) $_POST['promotore_azienda_id'] : null;
+        $promotoreUtenteId = ($_POST['promotore_utente_id'] ?? '') !== '' ? (int) $_POST['promotore_utente_id'] : null;
 
-        if (!preg_match('/^\d{11}$/', $partitaIva)) {
-            $errors[] = 'Partita IVA obbligatoria: inserire esattamente 11 numeri.';
-        }
+        $errors = array_merge($errors, companyIdentifierErrors($pdo, $partitaIva, $codiceFiscale, $id));
 
-        if ($codiceFiscale !== '' && !preg_match('/^(\d{11}|[A-Z0-9]{16})$/', $codiceFiscale)) {
-            $errors[] = 'Codice fiscale non valido: usa 11 numeri o 16 caratteri alfanumerici.';
-        }
+
 
         if ($ragioneSociale === '' || mb_strlen($ragioneSociale) > 30) {
             $errors[] = 'Ragione Sociale obbligatoria e massimo 30 caratteri.';
@@ -167,12 +369,54 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $errors[] = 'Seleziona almeno una Tipologia di Azienda.';
         }
 
-        if (!preg_match('/^\d+\s*-\s*\d+$/', $organicoMedio)) {
-            $errors[] = 'Organico Medio obbligatorio: usa formato range (es. 10-50).';
+        if (!$sediInput) {
+            $errors[] = 'Inserisci almeno una sede aziendale.';
+        }
+        foreach ($sediInput as $index => $sede) {
+            $numeroSede = $index + 1;
+            if (!in_array($sede['tipo_sede'], $TIPI_SEDE, true)) {
+                $errors[] = "Tipo sede non valido per la sede {$numeroSede}.";
+            }
+            if ($sede['via'] === '' || $sede['numero_civico'] === '' || $sede['cap'] === '' || $sede['regione'] === '' || $sede['provincia'] === '' || $sede['comune'] === '') {
+                $errors[] = "Completa tutti i campi della sede {$numeroSede}.";
+            }
+            if ($sede['cap'] !== '' && !preg_match('/^\d{5}$/', $sede['cap'])) {
+                $errors[] = "CAP non valido per la sede {$numeroSede}: inserire 5 numeri.";
+            }
+            if ($sede['provincia'] !== '' && !preg_match('/^[A-Z]{2}$/', $sede['provincia'])) {
+                $errors[] = "Provincia non valida per la sede {$numeroSede}: inserire la sigla di 2 lettere.";
+            }
         }
 
-        if (!is_numeric($fatturato) || (float) $fatturato < 0) {
-            $errors[] = 'Fatturato obbligatorio: inserisci un importo valido in euro.';
+        foreach ($referentiInput as $index => $referente) {
+            $numeroReferente = $index + 1;
+            if ($referente['nome_cognome'] === '') {
+                $errors[] = "Nome e cognome obbligatori per il referente {$numeroReferente}.";
+            }
+            if ($referente['email'] !== '' && !filter_var($referente['email'], FILTER_VALIDATE_EMAIL)) {
+                $errors[] = "Email non valida per il referente {$numeroReferente}.";
+            }
+        }
+
+        if ($rcoUtenteId !== null && !in_array($rcoUtenteId, array_column($utentiRco, 'id'))) {
+            $errors[] = 'RCO non valido: seleziona un Amministratore, Responsabile di Area o Consulente.';
+        }
+        if ($promotoreUtenteId !== null && !in_array($promotoreUtenteId, array_column($utentiPromotori, 'id'))) {
+            $errors[] = 'Promotore non valido: seleziona un utente con ruolo Promotore.';
+        }
+        if ($categoria !== '' && !in_array($categoria, $CATEGORIE_MERCEOLOGICHE, true)
+            && $categoria !== ($valoriAziendaEsistenti['categoria'] ?? null)) {
+            $errors[] = 'Settore di Attività non valido.';
+        }
+
+        if (!in_array($organicoMedio, $ORGANICO_OPTIONS, true)
+            && $organicoMedio !== ($valoriAziendaEsistenti['organico_medio'] ?? null)) {
+            $errors[] = 'Numero di Dipendenti non valido.';
+        }
+
+        if (!in_array($fatturato, $FATTURATO_OPTIONS, true)
+            && $fatturato !== ($valoriAziendaEsistenti['fatturato'] ?? null)) {
+            $errors[] = 'Fatturato non valido.';
         }
 
         if ($email !== '' && !filter_var($email, FILTER_VALIDATE_EMAIL)) {
@@ -194,7 +438,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         if (!$errors) {
             $params = [
-                ':partita_iva' => $partitaIva,
+                ':partita_iva' => $partitaIva !== '' ? $partitaIva : null,
                 ':codice_fiscale' => $codiceFiscale !== '' ? $codiceFiscale : null,
                 ':ragione_sociale' => $ragioneSociale,
                 ':iban' => $iban !== '' ? $iban : null,
@@ -204,21 +448,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 ':pec' => $pec !== '' ? $pec : null,
                 ':email' => $email !== '' ? $email : null,
                 ':url_sito' => $urlSito !== '' ? $urlSito : null,
-                ':via' => $via !== '' ? $via : null,
-                ':numero_civico' => $numeroCivico !== '' ? $numeroCivico : null,
-                ':cap' => $cap !== '' ? $cap : null,
-                ':localita' => $localita !== '' ? $localita : null,
-                ':provincia' => $provincia !== '' ? $provincia : null,
                 ':rco_utente_id' => $rcoUtenteId,
                 ':segnalata_da_utente_id' => $segnalataDaUtenteId,
                 ':categoria' => $categoria !== '' ? $categoria : null,
                 ':ea' => $ea !== '' ? $ea : null,
                 ':organico_medio' => $organicoMedio,
-                ':fatturato' => number_format((float) $fatturato, 2, '.', ''),
+                ':fatturato' => $fatturato,
                 ':conosciuto_come' => $conosciutoCome !== '' ? $conosciutoCome : null,
                 ':principali_prodotti' => $principaliProdotti !== '' ? $principaliProdotti : null,
                 ':note' => $note !== '' ? $note : null,
-                ':promotore_azienda_id' => $promotoreAziendaId,
+                ':promotore_utente_id' => $promotoreUtenteId,
             ];
 
             if ($id > 0) {
@@ -233,11 +472,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             pec = :pec,
                             email = :email,
                             url_sito = :url_sito,
-                            via = :via,
-                            numero_civico = :numero_civico,
-                            cap = :cap,
-                            localita = :localita,
-                            provincia = :provincia,
                             rco_utente_id = :rco_utente_id,
                             segnalata_da_utente_id = :segnalata_da_utente_id,
                             categoria = :categoria,
@@ -247,34 +481,77 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             conosciuto_come = :conosciuto_come,
                             principali_prodotti = :principali_prodotti,
                             note = :note,
-                            promotore_azienda_id = :promotore_azienda_id
+                            promotore_utente_id = :promotore_utente_id
                         WHERE id = :id';
                 $params[':id'] = $id;
             } else {
                 $sql = 'INSERT INTO aziende (
                             partita_iva, codice_fiscale, ragione_sociale, iban, tipologia_azienda, codice_fatturazione,
-                            telefono, pec, email, url_sito, via, numero_civico, cap, localita, provincia,
+                            telefono, pec, email, url_sito,
                             rco_utente_id, segnalata_da_utente_id, categoria, ea, organico_medio, fatturato,
-                            conosciuto_come, principali_prodotti, note, promotore_azienda_id
+                            conosciuto_come, principali_prodotti, note, promotore_utente_id
                         ) VALUES (
                             :partita_iva, :codice_fiscale, :ragione_sociale, :iban, :tipologia_azienda, :codice_fatturazione,
-                            :telefono, :pec, :email, :url_sito, :via, :numero_civico, :cap, :localita, :provincia,
+                            :telefono, :pec, :email, :url_sito,
                             :rco_utente_id, :segnalata_da_utente_id, :categoria, :ea, :organico_medio, :fatturato,
-                            :conosciuto_come, :principali_prodotti, :note, :promotore_azienda_id
+                            :conosciuto_come, :principali_prodotti, :note, :promotore_utente_id
                         )';
             }
 
             try {
+                $pdo->beginTransaction();
                 $stmt = $pdo->prepare($sql);
                 $stmt->execute($params);
+                $aziendaId = $id > 0 ? $id : (int) $pdo->lastInsertId();
+
+                $stmtDeleteSedi = $pdo->prepare('DELETE FROM aziende_sedi WHERE azienda_id = :azienda_id');
+                $stmtDeleteSedi->execute([':azienda_id' => $aziendaId]);
+                $stmtInsertSede = $pdo->prepare(
+                    'INSERT INTO aziende_sedi (azienda_id, tipo_sede, via, numero_civico, cap, regione, provincia, comune)
+                     VALUES (:azienda_id, :tipo_sede, :via, :numero_civico, :cap, :regione, :provincia, :comune)'
+                );
+                foreach ($sediInput as $sede) {
+                    $stmtInsertSede->execute([
+                        ':azienda_id' => $aziendaId,
+                        ':tipo_sede' => $sede['tipo_sede'],
+                        ':via' => $sede['via'],
+                        ':numero_civico' => $sede['numero_civico'],
+                        ':cap' => $sede['cap'],
+                        ':regione' => $sede['regione'],
+                        ':provincia' => $sede['provincia'],
+                        ':comune' => $sede['comune'],
+                    ]);
+                }
+
+                $stmtDeleteReferenti = $pdo->prepare('DELETE FROM aziende_referenti WHERE azienda_id = :azienda_id');
+                $stmtDeleteReferenti->execute([':azienda_id' => $aziendaId]);
+                $stmtInsertReferente = $pdo->prepare(
+                    'INSERT INTO aziende_referenti (azienda_id, nome_cognome, telefono, email, ruolo)
+                     VALUES (:azienda_id, :nome_cognome, :telefono, :email, :ruolo)'
+                );
+                foreach ($referentiInput as $referente) {
+                    $stmtInsertReferente->execute([
+                        ':azienda_id' => $aziendaId,
+                        ':nome_cognome' => $referente['nome_cognome'],
+                        ':telefono' => $referente['telefono'] !== '' ? $referente['telefono'] : null,
+                        ':email' => $referente['email'] !== '' ? $referente['email'] : null,
+                        ':ruolo' => $referente['ruolo'] !== '' ? $referente['ruolo'] : null,
+                    ]);
+                }
+                $pdo->commit();
+
                 $success = $id > 0 ? 'Azienda aggiornata correttamente.' : 'Azienda creata correttamente.';
                 $action = 'list';
                 $editId = 0;
                 $aziendaInModifica = null;
-                $aziendePromotori = $pdo->query("SELECT id, ragione_sociale FROM aziende WHERE FIND_IN_SET('Promotore', tipologia_azienda) > 0 ORDER BY ragione_sociale")->fetchAll();
+                $sediForm = [];
+                $referentiForm = [];
             } catch (PDOException $e) {
+                if ($pdo->inTransaction()) {
+                    $pdo->rollBack();
+                }
                 if ((int) ($e->errorInfo[1] ?? 0) === 1062) {
-                    $errors[] = 'Partita IVA già presente nel sistema.';
+                    $errors[] = 'Azienda già censita a sistema con questa Partita IVA.';
                 } else {
                     $errors[] = 'Errore durante il salvataggio dell\'azienda.';
                 }
@@ -285,9 +562,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 $filters = [
     'partita_iva', 'codice_fiscale', 'ragione_sociale', 'iban', 'tipologia_azienda', 'codice_fatturazione', 'telefono',
-    'pec', 'email', 'url_sito', 'via', 'numero_civico', 'cap', 'localita', 'provincia', 'categoria', 'ea',
+    'pec', 'email', 'url_sito', 'via', 'numero_civico', 'cap', 'localita', 'regione', 'provincia', 'comune', 'categoria', 'ea',
     'organico_medio', 'fatturato', 'conosciuto_come', 'principali_prodotti', 'note', 'rco_utente_id',
-    'segnalata_da_utente_id', 'promotore_azienda_id',
+    'segnalata_da_utente_id', 'promotore_utente_id',
 ];
 
 $where = [];
@@ -300,16 +577,21 @@ foreach ($filters as $field) {
     }
 
     if ($field === 'tipologia_azienda') {
-        $where[] = "FIND_IN_SET(:$key, tipologia_azienda) > 0";
+        $where[] = "FIND_IN_SET(:$key, a.tipologia_azienda) > 0";
         $params[":$key"] = $value;
-    } elseif (in_array($field, ['rco_utente_id', 'segnalata_da_utente_id', 'promotore_azienda_id'], true)) {
-        $where[] = "$field = :$key";
+    } elseif ($field === 'regione') {
+        $where[] = "EXISTS (
+            SELECT 1
+            FROM aziende_sedi sede_filtro
+            WHERE sede_filtro.azienda_id = a.id
+              AND sede_filtro.regione = :$key
+        )";
+        $params[":$key"] = $value;
+    } elseif (in_array($field, ['rco_utente_id', 'segnalata_da_utente_id', 'promotore_utente_id'], true)) {
+        $where[] = "a.$field = :$key";
         $params[":$key"] = (int) $value;
-    } elseif ($field === 'fatturato') {
-        $where[] = "$field = :$key";
-        $params[":$key"] = str_replace(',', '.', $value);
     } else {
-        $where[] = "$field LIKE :$key";
+        $where[] = "a.$field LIKE :$key";
         $params[":$key"] = '%' . $value . '%';
     }
 }
@@ -317,11 +599,11 @@ foreach ($filters as $field) {
 $sqlList = 'SELECT a.*, '
     . 'CONCAT(r.nome, " ", r.cognome) AS rco_nome, '
     . 'CONCAT(s.nome, " ", s.cognome) AS segnalata_nome, '
-    . 'p.ragione_sociale AS promotore_nome '
+    . 'CONCAT(p.nome, " ", p.cognome) AS promotore_nome '
     . 'FROM aziende a '
     . 'LEFT JOIN utenti r ON r.id = a.rco_utente_id '
     . 'LEFT JOIN utenti s ON s.id = a.segnalata_da_utente_id '
-    . 'LEFT JOIN aziende p ON p.id = a.promotore_azienda_id ';
+    . 'LEFT JOIN utenti p ON p.id = a.promotore_utente_id ';
 
 if ($where) {
     $sqlList .= 'WHERE ' . implode(' AND ', $where);
@@ -336,40 +618,60 @@ $utenteLoggato = currentUser();
 renderHeader('Simplex - Aziende');
 
 $formData = $aziendaInModifica ?: [];
-$formTipologie = isset($formData['tipologia_azienda']) ? explode(',', (string) $formData['tipologia_azienda']) : [];
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['azione'] ?? '') === 'save' && $errors) {
+    $formData = $_POST;
+}
+// Retain an existing legacy value on edit rather than silently reclassifying the company.
+$formSelectOptions = [
+    'organico_medio' => $ORGANICO_OPTIONS,
+    'fatturato' => $FATTURATO_OPTIONS,
+    'categoria' => $CATEGORIE_MERCEOLOGICHE,
+];
+foreach ($formSelectOptions as $campo => &$opzioni) {
+    $valorePrecedente = $aziendaInModifica[$campo] ?? $valoriAziendaEsistenti[$campo] ?? '';
+    if ($valorePrecedente !== '' && !in_array($valorePrecedente, $opzioni, true)) {
+        $opzioni[] = $valorePrecedente;
+    }
+}
+unset($opzioni);
+$formTipologie = isset($formData['tipologia_azienda'])
+    ? (is_array($formData['tipologia_azienda']) ? $formData['tipologia_azienda'] : explode(',', (string) $formData['tipologia_azienda']))
+    : [];
+$sediFormJson = json_encode($sediForm, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT);
+$referentiFormJson = json_encode($referentiForm, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT);
 ?>
 <div class="container-fluid">
     <div class="row">
         <nav class="col-12 col-md-3 col-lg-2 sidebar p-3">
             <h1 class="h4 text-white mb-4">Simplex</h1>
             <ul class="nav nav-pills flex-column gap-2 mb-3">
-                <li class="nav-item"><a class="nav-link" href="bacheca.php">Bacheca</a></li>
-                <li class="nav-item"><a class="nav-link" href="offerte.php">Offerte</a></li>
-                <li class="nav-item"><a class="nav-link" href="commesse.php">Commesse</a></li>
+                <li class="nav-item"><a class="nav-link" href="bacheca.php"><?= menuIcon('Bacheca') ?> Bacheca</a></li>
+                <li class="nav-item"><a class="nav-link" href="offerte.php"><?= menuIcon('Offerte') ?> Offerte</a></li>
+                <li class="nav-item"><a class="nav-link" href="commesse.php"><?= menuIcon('Commesse') ?> Commesse</a></li>
 
                 <li class="nav-item">
                     <a class="nav-link d-flex justify-content-between align-items-center" data-bs-toggle="collapse" href="#menuAnagrafiche" role="button" aria-expanded="false" aria-controls="menuAnagrafiche">
-                        <span>Anagrafiche</span><span>▾</span>
+                        <span><?= menuIcon('Anagrafiche') ?> Anagrafiche</span><span>▾</span>
                     </a>
                     <ul class="nav flex-column ms-3 collapse" id="menuAnagrafiche">
-                        <li class="nav-item"><a class="nav-link" href="utenti.php">Utenti</a></li>
-                        <li class="nav-item"><a class="nav-link" href="aziende.php">Aziende</a></li>
-                        <li class="nav-item"><a class="nav-link" href="enti_certificazione.php">Enti di Certificazione</a></li>
+                        <li class="nav-item"><a class="nav-link" href="utenti.php"><?= menuIcon('Utenti') ?> Utenti</a></li>
+                        <li class="nav-item"><a class="nav-link" href="aziende.php"><?= menuIcon('Aziende') ?> Aziende</a></li>
+                        <li class="nav-item"><a class="nav-link" href="enti_certificazione.php"><?= menuIcon('Enti di Certificazione') ?> Enti di Certificazione</a></li>
                     </ul>
                 </li>
 
                 <li class="nav-item">
                     <a class="nav-link d-flex justify-content-between align-items-center" data-bs-toggle="collapse" href="#menuAmministrazione" role="button" aria-expanded="false" aria-controls="menuAmministrazione">
-                        <span>Amministrazione</span><span>▾</span>
+                        <span><?= menuIcon('Amministrazione') ?> Amministrazione</span><span>▾</span>
                     </a>
                     <ul class="nav flex-column ms-3 collapse" id="menuAmministrazione">
-                        <li class="nav-item"><a class="nav-link" href="amministrazione_produzione.php">Produzione</a></li>
-                        <li class="nav-item"><a class="nav-link" href="fatture.php">Fatture</a></li>
-                        <li class="nav-item"><a class="nav-link" href="pagamenti.php">Pagamenti</a></li>
+                        <li class="nav-item"><a class="nav-link" href="amministrazione_produzione.php"><?= menuIcon('Produzione') ?> Produzione</a></li>
+                        <li class="nav-item"><a class="nav-link" href="fatture.php"><?= menuIcon('Fatture') ?> Fatture</a></li>
+                        <li class="nav-item"><a class="nav-link" href="pagamenti.php"><?= menuIcon('Pagamenti') ?> Pagamenti</a></li>
                     </ul>
                 </li>
 
-                <li class="nav-item"><a class="nav-link disabled" href="#">Impostazioni</a></li>
+                <li class="nav-item"><a class="nav-link disabled" href="#"><?= menuIcon('Impostazioni') ?> Impostazioni</a></li>
             </ul>
 
             <?php if ($utenteLoggato): ?>
@@ -378,9 +680,10 @@ $formTipologie = isset($formData['tipologia_azienda']) ? explode(',', (string) $
                     <strong><?= htmlspecialchars($utenteLoggato['nome_completo']) ?></strong><br>
                     <span class="text-light-emphasis"><?= htmlspecialchars($utenteLoggato['nome_utente']) ?></span>
                     <div class="mt-2">
-                        <a class="btn btn-outline-light btn-sm" href="logout.php">Logout</a>
+                        <a class="btn btn-outline-light btn-sm" href="logout.php"><?= menuIcon('Logout') ?> Logout</a>
                     </div>
                 </div>
+
             <?php endif; ?>
         </nav>
 
@@ -407,11 +710,11 @@ $formTipologie = isset($formData['tipologia_azienda']) ? explode(',', (string) $
                             <input type="hidden" name="id" value="<?= (int)($formData['id'] ?? 0) ?>">
 
                             <div class="col-md-4">
-                                <label class="form-label">Partita IVA *</label>
-                                <input class="form-control" name="partita_iva" maxlength="11" required value="<?= htmlspecialchars($formData['partita_iva'] ?? '') ?>">
+                                <label class="form-label">Partita IVA</label>
+                                <input class="form-control" name="partita_iva" maxlength="11" value="<?= htmlspecialchars($formData['partita_iva'] ?? '') ?>">
                             </div>
                             <div class="col-md-4">
-                                <label class="form-label">Codice Fiscale</label>
+                                <label class="form-label">Codice Fiscale (obbligatorio senza Partita IVA)</label>
                                 <input class="form-control" name="codice_fiscale" maxlength="16" value="<?= htmlspecialchars($formData['codice_fiscale'] ?? '') ?>">
                             </div>
                             <div class="col-md-4">
@@ -423,13 +726,13 @@ $formTipologie = isset($formData['tipologia_azienda']) ? explode(',', (string) $
                                 <input class="form-control" name="iban" value="<?= htmlspecialchars($formData['iban'] ?? '') ?>">
                             </div>
                             <div class="col-md-8">
-                                <label class="form-label d-block">Tipologia Azienda *</label>
-                                <?php foreach ($TIPOLOGIE_AZIENDA as $tip): ?>
-                                    <div class="form-check form-check-inline">
-                                        <input class="form-check-input" type="checkbox" name="tipologia_azienda[]" id="tip_<?= md5($tip) ?>" value="<?= htmlspecialchars($tip) ?>" <?= in_array($tip, $formTipologie, true) ? 'checked' : '' ?>>
-                                        <label class="form-check-label" for="tip_<?= md5($tip) ?>"><?= htmlspecialchars($tip) ?></label>
-                                    </div>
-                                <?php endforeach; ?>
+                                <label class="form-label" for="tipologia_azienda">Tipologia *</label>
+                                <select class="form-select" name="tipologia_azienda[]" id="tipologia_azienda" multiple required size="4">
+                                    <?php foreach ($TIPOLOGIE_AZIENDA as $tip): ?>
+                                        <option value="<?= htmlspecialchars($tip) ?>" <?= in_array($tip, $formTipologie, true) ? 'selected' : '' ?>><?= htmlspecialchars($tip) ?></option>
+                                    <?php endforeach; ?>
+                                </select>
+                                <div class="form-text">Puoi selezionare una o più tipologie.</div>
                             </div>
 
                             <div class="col-md-4"><label class="form-label">Codice fatturazione</label><input class="form-control" name="codice_fatturazione" value="<?= htmlspecialchars($formData['codice_fatturazione'] ?? '') ?>"></div>
@@ -437,17 +740,71 @@ $formTipologie = isset($formData['tipologia_azienda']) ? explode(',', (string) $
                             <div class="col-md-4"><label class="form-label">PEC</label><input type="email" class="form-control" name="pec" value="<?= htmlspecialchars($formData['pec'] ?? '') ?>"></div>
                             <div class="col-md-4"><label class="form-label">Email</label><input type="email" class="form-control" name="email" value="<?= htmlspecialchars($formData['email'] ?? '') ?>"></div>
                             <div class="col-md-4"><label class="form-label">Url sito</label><input class="form-control" name="url_sito" value="<?= htmlspecialchars($formData['url_sito'] ?? '') ?>"></div>
-                            <div class="col-md-4"><label class="form-label">Via</label><input class="form-control" name="via" value="<?= htmlspecialchars($formData['via'] ?? '') ?>"></div>
-                            <div class="col-md-2"><label class="form-label">Numero civico</label><input class="form-control" name="numero_civico" value="<?= htmlspecialchars($formData['numero_civico'] ?? '') ?>"></div>
-                            <div class="col-md-2"><label class="form-label">CAP</label><input class="form-control" name="cap" value="<?= htmlspecialchars($formData['cap'] ?? '') ?>"></div>
-                            <div class="col-md-4"><label class="form-label">Località</label><input class="form-control" name="localita" value="<?= htmlspecialchars($formData['localita'] ?? '') ?>"></div>
-                            <div class="col-md-2"><label class="form-label">Provincia</label><input class="form-control" name="provincia" maxlength="2" value="<?= htmlspecialchars($formData['provincia'] ?? '') ?>"></div>
+
+                            <div class="col-12">
+                                <div class="card border-secondary-subtle">
+                                    <div class="card-header d-flex justify-content-between align-items-center">
+                                        <span>Sedi aziendali *</span>
+                                        <button class="btn btn-sm btn-outline-primary" type="button" data-bs-toggle="modal" data-bs-target="#modalSede">Aggiungi Sede</button>
+                                    </div>
+                                    <div class="card-body">
+                                        <div id="sedi-hidden-fields"></div>
+                                        <div class="table-responsive">
+                                            <table class="table table-sm align-middle mb-0">
+                                                <thead>
+                                                    <tr>
+                                                        <th>Tipo sede</th>
+                                                        <th>Indirizzo</th>
+                                                        <th>CAP</th>
+                                                        <th>Comune</th>
+                                                        <th>Provincia</th>
+                                                        <th>Regione</th>
+                                                        <th>Azioni</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody id="sedi-table-body">
+                                                    <tr id="sedi-empty-row"><td colspan="7" class="text-center text-muted py-3">Nessuna sede inserita.</td></tr>
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="col-12">
+                                <div class="card border-secondary-subtle">
+                                    <div class="card-header d-flex justify-content-between align-items-center">
+                                        <span>Referenti aziendali</span>
+                                        <button class="btn btn-sm btn-outline-primary" type="button" data-bs-toggle="modal" data-bs-target="#modalReferente">Aggiungi Referente</button>
+                                    </div>
+                                    <div class="card-body">
+                                        <div id="referenti-hidden-fields"></div>
+                                        <div class="table-responsive">
+                                            <table class="table table-sm align-middle mb-0">
+                                                <thead>
+                                                    <tr>
+                                                        <th>Nome e Cognome</th>
+                                                        <th>Telefono</th>
+                                                        <th>Email</th>
+                                                        <th>Ruolo</th>
+                                                        <th>Azioni</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody id="referenti-table-body">
+                                                    <tr><td colspan="5" class="text-center text-muted py-3">Nessun referente inserito.</td></tr>
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                        <div class="form-text mt-2">Puoi attribuire uno o più referenti all'azienda. Il nome e cognome sono obbligatori per ogni referente inserito.</div>
+                                    </div>
+                                </div>
+                            </div>
 
                             <div class="col-md-4">
                                 <label class="form-label">RCO</label>
                                 <select class="form-select" name="rco_utente_id">
                                     <option value="">-- Seleziona --</option>
-                                    <?php foreach ($utenti as $utente): ?>
+                                    <?php foreach ($utentiRco as $utente): ?>
                                         <option value="<?= (int)$utente['id'] ?>" <?= ((int)($formData['rco_utente_id'] ?? 0) === (int)$utente['id']) ? 'selected' : '' ?>>
                                             <?= htmlspecialchars($utente['nome'] . ' ' . $utente['cognome']) ?>
                                         </option>
@@ -466,10 +823,10 @@ $formTipologie = isset($formData['tipologia_azienda']) ? explode(',', (string) $
                                 </select>
                             </div>
                             <div class="col-md-4">
-                                <label class="form-label">Categoria</label>
+                                <label class="form-label">Settore di Attività</label>
                                 <select class="form-select" name="categoria">
                                     <option value="">-- Seleziona --</option>
-                                    <?php foreach ($CATEGORIE_MERCEOLOGICHE as $categoria): ?>
+                                    <?php foreach ($formSelectOptions['categoria'] as $categoria): ?>
                                         <option value="<?= htmlspecialchars($categoria) ?>" <?= (($formData['categoria'] ?? '') === $categoria) ? 'selected' : '' ?>><?= htmlspecialchars($categoria) ?></option>
                                     <?php endforeach; ?>
                                 </select>
@@ -484,8 +841,24 @@ $formTipologie = isset($formData['tipologia_azienda']) ? explode(',', (string) $
                                     <?php endforeach; ?>
                                 </select>
                             </div>
-                            <div class="col-md-3"><label class="form-label">Organico Medio *</label><input class="form-control" name="organico_medio" placeholder="es. 10-50" required value="<?= htmlspecialchars($formData['organico_medio'] ?? '') ?>"></div>
-                            <div class="col-md-3"><label class="form-label">Fatturato (€) *</label><input class="form-control" name="fatturato" required value="<?= htmlspecialchars($formData['fatturato'] ?? '') ?>"></div>
+                            <div class="col-md-3">
+                                <label class="form-label">Numero di Dipendenti *</label>
+                                <select class="form-select" name="organico_medio" required>
+                                    <option value="">-- Seleziona --</option>
+                                    <?php foreach ($formSelectOptions['organico_medio'] as $option): ?>
+                                        <option value="<?= htmlspecialchars($option) ?>" <?= (($formData['organico_medio'] ?? '') === $option) ? 'selected' : '' ?>><?= htmlspecialchars($option) ?></option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </div>
+                            <div class="col-md-3">
+                                <label class="form-label">Fatturato *</label>
+                                <select class="form-select" name="fatturato" required>
+                                    <option value="">-- Seleziona --</option>
+                                    <?php foreach ($formSelectOptions['fatturato'] as $option): ?>
+                                        <option value="<?= htmlspecialchars($option) ?>" <?= (($formData['fatturato'] ?? '') === $option) ? 'selected' : '' ?>><?= htmlspecialchars($option) ?></option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </div>
 
                             <div class="col-md-4">
                                 <label class="form-label">Conosciuto Come</label>
@@ -497,12 +870,12 @@ $formTipologie = isset($formData['tipologia_azienda']) ? explode(',', (string) $
                                 </select>
                             </div>
                             <div class="col-md-8">
-                                <label class="form-label">Promotore (azienda)</label>
-                                <select class="form-select" name="promotore_azienda_id">
+                                <label class="form-label">Promotore</label>
+                                <select class="form-select" name="promotore_utente_id">
                                     <option value="">-- Seleziona --</option>
-                                    <?php foreach ($aziendePromotori as $aziendaPromotore): ?>
-                                        <option value="<?= (int)$aziendaPromotore['id'] ?>" <?= ((int)($formData['promotore_azienda_id'] ?? 0) === (int)$aziendaPromotore['id']) ? 'selected' : '' ?>>
-                                            <?= htmlspecialchars($aziendaPromotore['ragione_sociale']) ?>
+                                    <?php foreach ($utentiPromotori as $utentePromotore): ?>
+                                        <option value="<?= (int)$utentePromotore['id'] ?>" <?= ((int)($formData['promotore_utente_id'] ?? 0) === (int)$utentePromotore['id']) ? 'selected' : '' ?>>
+                                            <?= htmlspecialchars($utentePromotore['nome'] . ' ' . $utentePromotore['cognome']) ?>
                                         </option>
                                     <?php endforeach; ?>
                                 </select>
@@ -518,6 +891,83 @@ $formTipologie = isset($formData['tipologia_azienda']) ? explode(',', (string) $
                         </form>
                     </div>
                 </div>
+
+                <div class="modal fade" id="modalSede" tabindex="-1" aria-labelledby="modalSedeLabel" aria-hidden="true">
+                    <div class="modal-dialog modal-lg">
+                        <div class="modal-content">
+                            <div class="modal-header">
+                                <h5 class="modal-title" id="modalSedeLabel">Aggiungi Sede</h5>
+                                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Chiudi"></button>
+                            </div>
+                            <div class="modal-body">
+                                <div class="row g-3" id="sede-modal-form">
+                                    <div class="col-md-4">
+                                        <label class="form-label">Tipo sede *</label>
+                                        <select class="form-select" id="sede_tipo">
+                                            <option value="">-- Seleziona --</option>
+                                            <?php foreach ($TIPI_SEDE as $tipoSede): ?>
+                                                <option value="<?= htmlspecialchars($tipoSede) ?>"><?= htmlspecialchars($tipoSede) ?></option>
+                                            <?php endforeach; ?>
+                                        </select>
+                                    </div>
+                                    <div class="col-md-6"><label class="form-label">Via *</label><input class="form-control" id="sede_via"></div>
+                                    <div class="col-md-2"><label class="form-label">Numero civico *</label><input class="form-control" id="sede_numero_civico"></div>
+                                    <div class="col-md-3"><label class="form-label">CAP *</label><input class="form-control" id="sede_cap" maxlength="5"></div>
+                                    <div class="col-md-3">
+                                        <label class="form-label">Regione *</label>
+                                        <select class="form-select js-regione" id="sede_regione" data-selected="">
+                                            <option value="">-- Seleziona --</option>
+                                            <?php foreach ($REGIONI_ITALIA as $regione): ?>
+                                                <option value="<?= htmlspecialchars($regione) ?>"><?= htmlspecialchars($regione) ?></option>
+                                            <?php endforeach; ?>
+                                        </select>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label class="form-label">Provincia *</label>
+                                        <select class="form-select js-provincia" id="sede_provincia" data-selected="">
+                                            <option value="">-- Seleziona prima la regione --</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label class="form-label">Comune *</label>
+                                        <select class="form-select js-comune" id="sede_comune" data-selected="">
+                                            <option value="">-- Seleziona prima la provincia --</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-12"><div class="alert alert-danger d-none mb-0" id="sede-modal-error"></div></div>
+                                </div>
+                            </div>
+                            <div class="modal-footer">
+                                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Annulla</button>
+                                <button type="button" class="btn btn-primary" id="salva-sede">Salva Sede</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="modal fade" id="modalReferente" tabindex="-1" aria-labelledby="modalReferenteLabel" aria-hidden="true">
+                    <div class="modal-dialog">
+                        <div class="modal-content">
+                            <div class="modal-header">
+                                <h5 class="modal-title" id="modalReferenteLabel">Aggiungi Referente</h5>
+                                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Chiudi"></button>
+                            </div>
+                            <div class="modal-body">
+                                <div class="row g-3" id="referente-modal-form">
+                                    <div class="col-12"><label class="form-label">Nome e Cognome *</label><input class="form-control" id="referente_nome_cognome" maxlength="120"></div>
+                                    <div class="col-md-6"><label class="form-label">Telefono</label><input class="form-control" id="referente_telefono" maxlength="30"></div>
+                                    <div class="col-md-6"><label class="form-label">Email</label><input type="email" class="form-control" id="referente_email" maxlength="100"></div>
+                                    <div class="col-12"><label class="form-label">Ruolo</label><input class="form-control" id="referente_ruolo" maxlength="80"></div>
+                                    <div class="col-12"><div class="alert alert-danger d-none mb-0" id="referente-modal-error"></div></div>
+                                </div>
+                            </div>
+                            <div class="modal-footer">
+                                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Annulla</button>
+                                <button type="button" class="btn btn-primary" id="salva-referente">Salva Referente</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             <?php endif; ?>
 
             <?php if ($aziendaInVisualizzazione): ?>
@@ -526,13 +976,95 @@ $formTipologie = isset($formData['tipologia_azienda']) ? explode(',', (string) $
                     <div class="card-body">
                         <div class="row g-3">
                             <?php foreach ($aziendaInVisualizzazione as $campo => $valore): ?>
-                                <div class="col-md-4"><strong><?= htmlspecialchars((string)$campo) ?>:</strong> <?= htmlspecialchars((string)($valore ?? '-')) ?></div>
+                                <div class="col-md-4"><strong><?= htmlspecialchars((string)$campo) ?>:</strong> <?= htmlspecialchars(preg_match('/(^data_|_il$|created_at$|aggiornato_il$)/', (string)$campo) ? formatDateIt($valore) : (string)($valore ?? '-')) ?></div>
                             <?php endforeach; ?>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card mb-4">
+                    <div class="card-header">Sedi Azienda</div>
+                    <div class="table-responsive">
+                        <table class="table table-sm table-striped align-middle mb-0">
+                            <thead><tr><th>Tipo sede</th><th>Via</th><th>Numero civico</th><th>CAP</th><th>Regione</th><th>Provincia</th><th>Comune</th></tr></thead>
+                            <tbody>
+                            <?php if (!$sediAzienda): ?><tr><td colspan="7" class="text-center text-muted py-3">Nessuna sede inserita.</td></tr><?php endif; ?>
+                            <?php foreach ($sediAzienda as $sede): ?>
+                                <tr>
+                                    <td><?= htmlspecialchars($sede['tipo_sede']) ?></td>
+                                    <td><?= htmlspecialchars($sede['via']) ?></td>
+                                    <td><?= htmlspecialchars($sede['numero_civico']) ?></td>
+                                    <td><?= htmlspecialchars($sede['cap']) ?></td>
+                                    <td><?= htmlspecialchars($sede['regione']) ?></td>
+                                    <td><?= htmlspecialchars($sede['provincia']) ?></td>
+                                    <td><?= htmlspecialchars($sede['comune']) ?></td>
+                                </tr>
+                            <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div class="card mb-4">
+                    <div class="card-header">Referenti Azienda</div>
+                    <div class="table-responsive">
+                        <table class="table table-sm table-striped align-middle mb-0">
+                            <thead><tr><th>Nome e Cognome</th><th>Telefono</th><th>Email</th><th>Ruolo</th></tr></thead>
+                            <tbody>
+                            <?php if (!$referentiAzienda): ?><tr><td colspan="4" class="text-center text-muted py-3">Nessun referente inserito.</td></tr><?php endif; ?>
+                            <?php foreach ($referentiAzienda as $referente): ?>
+                                <tr>
+                                    <td><?= htmlspecialchars($referente['nome_cognome']) ?></td>
+                                    <td><?= htmlspecialchars($referente['telefono'] ?? '-') ?></td>
+                                    <td>
+                                        <?php if (!empty($referente['email'])): ?>
+                                            <a href="mailto:<?= htmlspecialchars($referente['email']) ?>"><?= htmlspecialchars($referente['email']) ?></a>
+                                        <?php else: ?>
+                                            -
+                                        <?php endif; ?>
+                                    </td>
+                                    <td><?= htmlspecialchars($referente['ruolo'] ?? '-') ?></td>
+                                </tr>
+                            <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div class="card mb-4">
+                    <div class="card-header">Documenti Azienda</div>
+                    <div class="card-body">
+                        <form method="post" enctype="multipart/form-data" class="row g-2 mb-3">
+                            <input type="hidden" name="azione" value="upload_file">
+                            <input type="hidden" name="id" value="<?= (int)$aziendaInVisualizzazione['id'] ?>">
+                            <div class="col-md-9"><input type="file" class="form-control" name="allegato" required></div>
+                            <div class="col-md-3 d-grid"><button class="btn btn-outline-primary" type="submit">Carica file</button></div>
+                        </form>
+                        <div class="table-responsive">
+                            <table class="table table-sm table-striped align-middle mb-0">
+                                <thead><tr><th>Nome file</th><th>Tipo</th><th>Dimensione</th><th>Caricato il</th><th>Azioni</th></tr></thead>
+                                <tbody>
+                                <?php if (!$filesAzienda): ?><tr><td colspan="5" class="text-center text-muted py-3">Nessun file caricato.</td></tr><?php endif; ?>
+                                <?php foreach ($filesAzienda as $file): ?>
+                                    <tr>
+                                        <td><?= htmlspecialchars($file['nome_originale']) ?></td>
+                                        <td><?= htmlspecialchars($file['mime_type'] ?? '-') ?></td>
+                                        <td><?= htmlspecialchars((string)$file['dimensione_bytes']) ?> bytes</td>
+                                        <td><?= htmlspecialchars(formatDateIt($file['caricato_il'] ?? null)) ?></td>
+                                        <td>
+                                            <a class="btn btn-sm btn-outline-secondary" href="download_azienda_file.php?id=<?= (int)$file['id'] ?>&mode=view" target="_blank">Visualizza</a>
+                                            <a class="btn btn-sm btn-outline-primary" href="download_azienda_file.php?id=<?= (int)$file['id'] ?>&mode=download">Scarica</a>
+                                        </td>
+                                    </tr>
+                                <?php endforeach; ?>
+                                </tbody>
+                            </table>
                         </div>
                     </div>
                 </div>
             <?php endif; ?>
 
+            <?php if ($action !== 'new'): ?>
             <div class="card mb-4">
                 <div class="card-header">Filtri Aziende</div>
                 <div class="card-body">
@@ -548,8 +1080,16 @@ $formTipologie = isset($formData['tipologia_azienda']) ? explode(',', (string) $
                         <div class="col-md-2"><input class="form-control" name="f_numero_civico" placeholder="Civico" value="<?= htmlspecialchars($_GET['f_numero_civico'] ?? '') ?>"></div>
                         <div class="col-md-2"><input class="form-control" name="f_cap" placeholder="CAP" value="<?= htmlspecialchars($_GET['f_cap'] ?? '') ?>"></div>
                         <div class="col-md-2"><input class="form-control" name="f_localita" placeholder="Località" value="<?= htmlspecialchars($_GET['f_localita'] ?? '') ?>"></div>
+                        <div class="col-md-3">
+                            <select class="form-select" name="f_regione" aria-label="Filtra per regione delle sedi">
+                                <option value="">Tutte le regioni</option>
+                                <?php foreach ($REGIONI_ITALIA as $regione): ?>
+                                    <option value="<?= htmlspecialchars($regione) ?>" <?= (($_GET['f_regione'] ?? '') === $regione) ? 'selected' : '' ?>><?= htmlspecialchars($regione) ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
                         <div class="col-md-1"><input class="form-control" name="f_provincia" placeholder="PR" value="<?= htmlspecialchars($_GET['f_provincia'] ?? '') ?>"></div>
-                        <div class="col-md-2"><input class="form-control" name="f_organico_medio" placeholder="Organico" value="<?= htmlspecialchars($_GET['f_organico_medio'] ?? '') ?>"></div>
+                        <div class="col-md-2"><input class="form-control" name="f_organico_medio" placeholder="Numero di Dipendenti" value="<?= htmlspecialchars($_GET['f_organico_medio'] ?? '') ?>"></div>
                         <div class="col-md-2"><input class="form-control" name="f_fatturato" placeholder="Fatturato" value="<?= htmlspecialchars($_GET['f_fatturato'] ?? '') ?>"></div>
 
                         <div class="col-md-3">
@@ -562,7 +1102,7 @@ $formTipologie = isset($formData['tipologia_azienda']) ? explode(',', (string) $
                         </div>
                         <div class="col-md-3">
                             <select class="form-select" name="f_categoria">
-                                <option value="">Categoria</option>
+                                <option value="">Settore di Attività</option>
                                 <?php foreach ($CATEGORIE_MERCEOLOGICHE as $categoria): ?>
                                     <option value="<?= htmlspecialchars($categoria) ?>" <?= (($_GET['f_categoria'] ?? '') === $categoria) ? 'selected' : '' ?>><?= htmlspecialchars($categoria) ?></option>
                                 <?php endforeach; ?>
@@ -588,7 +1128,7 @@ $formTipologie = isset($formData['tipologia_azienda']) ? explode(',', (string) $
                         <div class="col-md-4">
                             <select class="form-select" name="f_rco_utente_id">
                                 <option value="">RCO</option>
-                                <?php foreach ($utenti as $utente): ?>
+                                <?php foreach ($utentiRco as $utente): ?>
                                     <option value="<?= (int)$utente['id'] ?>" <?= ((string)($_GET['f_rco_utente_id'] ?? '') === (string)$utente['id']) ? 'selected' : '' ?>>
                                         <?= htmlspecialchars($utente['nome'] . ' ' . $utente['cognome']) ?>
                                     </option>
@@ -606,11 +1146,11 @@ $formTipologie = isset($formData['tipologia_azienda']) ? explode(',', (string) $
                             </select>
                         </div>
                         <div class="col-md-4">
-                            <select class="form-select" name="f_promotore_azienda_id">
-                                <option value="">Promotore (azienda)</option>
-                                <?php foreach ($aziendePromotori as $aziendaPromotore): ?>
-                                    <option value="<?= (int)$aziendaPromotore['id'] ?>" <?= ((string)($_GET['f_promotore_azienda_id'] ?? '') === (string)$aziendaPromotore['id']) ? 'selected' : '' ?>>
-                                        <?= htmlspecialchars($aziendaPromotore['ragione_sociale']) ?>
+                            <select class="form-select" name="f_promotore_utente_id">
+                                <option value="">Promotore</option>
+                                <?php foreach ($utentiPromotori as $utentePromotore): ?>
+                                    <option value="<?= (int)$utentePromotore['id'] ?>" <?= ((string)($_GET['f_promotore_utente_id'] ?? '') === (string)$utentePromotore['id']) ? 'selected' : '' ?>>
+                                        <?= htmlspecialchars($utentePromotore['nome'] . ' ' . $utentePromotore['cognome']) ?>
                                     </option>
                                 <?php endforeach; ?>
                             </select>
@@ -650,7 +1190,7 @@ $formTipologie = isset($formData['tipologia_azienda']) ? explode(',', (string) $
                         <?php endif; ?>
                         <?php foreach ($aziende as $azienda): ?>
                             <tr>
-                                <td><?= htmlspecialchars($azienda['partita_iva']) ?></td>
+                                <td><?= htmlspecialchars($azienda['partita_iva'] ?? '-') ?></td>
                                 <td><?= htmlspecialchars($azienda['ragione_sociale']) ?></td>
                                 <td><?= htmlspecialchars($azienda['tipologia_azienda']) ?></td>
                                 <td><?= htmlspecialchars($azienda['email'] ?? '-') ?></td>
@@ -673,7 +1213,331 @@ $formTipologie = isset($formData['tipologia_azienda']) ? explode(',', (string) $
                     </table>
                 </div>
             </div>
+            <?php endif; ?>
         </main>
     </div>
 </div>
+<script>
+const comuniDatasetUrl = 'https://raw.githubusercontent.com/matteocontrini/comuni-json/master/comuni.json';
+let comuniItaliaCache = null;
+
+function normalizeProvincia(item) {
+    return (item?.provincia?.sigla || item?.sigla || '').toString().trim().toUpperCase();
+}
+
+function normalizeRegione(item) {
+    return (item?.regione?.nome || item?.regione || '').toString().trim();
+}
+
+function normalizeComune(item) {
+    return (item?.nome || item?.comune || '').toString().trim();
+}
+
+async function loadComuniDataset() {
+    if (comuniItaliaCache) return comuniItaliaCache;
+    const response = await fetch(comuniDatasetUrl);
+    if (!response.ok) throw new Error('Impossibile caricare dataset comuni/province.');
+    comuniItaliaCache = await response.json();
+    return comuniItaliaCache;
+}
+
+function fillSelectOptions(select, values, placeholder, selectedValue = '') {
+    if (!select) return;
+    const normalizedSelected = (selectedValue || '').toString();
+    select.innerHTML = `<option value="">${placeholder}</option>`;
+    values.forEach((value) => {
+        const option = document.createElement('option');
+        option.value = value;
+        option.textContent = value;
+        if (value === normalizedSelected) option.selected = true;
+        select.appendChild(option);
+    });
+}
+
+async function setupGeoSelectors(scope) {
+    const regioneSelect = scope.querySelector('.js-regione');
+    const provinciaSelect = scope.querySelector('.js-provincia');
+    const comuneSelect = scope.querySelector('.js-comune');
+    if (!regioneSelect || !provinciaSelect || !comuneSelect) return;
+
+    try {
+        const dataset = await loadComuniDataset();
+        const selectedProvincia = provinciaSelect.dataset.selected || '';
+        const selectedComune = comuneSelect.dataset.selected || '';
+
+        const refreshProvince = () => {
+            const regione = regioneSelect.value;
+            const province = [...new Set(dataset.filter((item) => normalizeRegione(item) === regione).map(normalizeProvincia).filter(Boolean))].sort();
+            fillSelectOptions(provinciaSelect, province, regione ? '-- Seleziona --' : '-- Seleziona prima la regione --', provinciaSelect.dataset.selected || '');
+            provinciaSelect.dataset.selected = '';
+            refreshComuni();
+        };
+
+        const refreshComuni = () => {
+            const regione = regioneSelect.value;
+            const provincia = provinciaSelect.value;
+            const comuni = [...new Set(dataset
+                .filter((item) => normalizeRegione(item) === regione && normalizeProvincia(item) === provincia)
+                .map(normalizeComune)
+                .filter(Boolean))]
+                .sort((a, b) => a.localeCompare(b, 'it'));
+            fillSelectOptions(comuneSelect, comuni, provincia ? '-- Seleziona --' : '-- Seleziona prima la provincia --', comuneSelect.dataset.selected || '');
+            comuneSelect.dataset.selected = '';
+        };
+
+        regioneSelect.addEventListener('change', refreshProvince);
+        provinciaSelect.addEventListener('change', refreshComuni);
+
+        if (selectedProvincia) provinciaSelect.dataset.selected = selectedProvincia;
+        if (selectedComune) comuneSelect.dataset.selected = selectedComune;
+        refreshProvince();
+    } catch (error) {
+        fillSelectOptions(provinciaSelect, [], 'Errore caricamento province');
+        fillSelectOptions(comuneSelect, [], 'Errore caricamento comuni');
+    }
+}
+
+
+const sediAziendali = <?= $sediFormJson ?: '[]' ?>;
+const referentiAziendali = <?= $referentiFormJson ?: '[]' ?>;
+const sediHiddenFields = document.getElementById('sedi-hidden-fields');
+const sediTableBody = document.getElementById('sedi-table-body');
+const sedeModalForm = document.getElementById('sede-modal-form');
+const sedeModalElement = document.getElementById('modalSede');
+const sedeModalError = document.getElementById('sede-modal-error');
+const referentiHiddenFields = document.getElementById('referenti-hidden-fields');
+const referentiTableBody = document.getElementById('referenti-table-body');
+const referenteModalForm = document.getElementById('referente-modal-form');
+const referenteModalElement = document.getElementById('modalReferente');
+const referenteModalError = document.getElementById('referente-modal-error');
+
+function addHiddenInput(container, name, value) {
+    const input = document.createElement('input');
+    input.type = 'hidden';
+    input.name = name;
+    input.value = value || '';
+    container.appendChild(input);
+}
+
+function resetSedeModal() {
+    if (!sedeModalForm) return;
+    ['sede_tipo', 'sede_via', 'sede_numero_civico', 'sede_cap', 'sede_regione'].forEach((id) => {
+        const field = document.getElementById(id);
+        if (field) field.value = '';
+    });
+    const provincia = document.getElementById('sede_provincia');
+    const comune = document.getElementById('sede_comune');
+    if (provincia) fillSelectOptions(provincia, [], '-- Seleziona prima la regione --');
+    if (comune) fillSelectOptions(comune, [], '-- Seleziona prima la provincia --');
+    if (sedeModalError) {
+        sedeModalError.classList.add('d-none');
+        sedeModalError.textContent = '';
+    }
+}
+
+function renderSedi() {
+    if (!sediHiddenFields || !sediTableBody) return;
+    sediHiddenFields.innerHTML = '';
+    sediTableBody.innerHTML = '';
+
+    if (sediAziendali.length === 0) {
+        const row = document.createElement('tr');
+        const cell = document.createElement('td');
+        cell.colSpan = 7;
+        cell.className = 'text-center text-muted py-3';
+        cell.textContent = 'Nessuna sede inserita.';
+        row.appendChild(cell);
+        sediTableBody.appendChild(row);
+        return;
+    }
+
+    sediAziendali.forEach((sede, index) => {
+        addHiddenInput(sediHiddenFields, 'sede_tipo[]', sede.tipo_sede);
+        addHiddenInput(sediHiddenFields, 'sede_via[]', sede.via);
+        addHiddenInput(sediHiddenFields, 'sede_numero_civico[]', sede.numero_civico);
+        addHiddenInput(sediHiddenFields, 'sede_cap[]', sede.cap);
+        addHiddenInput(sediHiddenFields, 'sede_regione[]', sede.regione);
+        addHiddenInput(sediHiddenFields, 'sede_provincia[]', sede.provincia);
+        addHiddenInput(sediHiddenFields, 'sede_comune[]', sede.comune);
+
+        const row = document.createElement('tr');
+        [
+            sede.tipo_sede,
+            `${sede.via || ''} ${sede.numero_civico || ''}`.trim(),
+            sede.cap,
+            sede.comune,
+            sede.provincia,
+            sede.regione,
+        ].forEach((value) => {
+            const cell = document.createElement('td');
+            cell.textContent = value || '-';
+            row.appendChild(cell);
+        });
+
+        const actionsCell = document.createElement('td');
+        const removeButton = document.createElement('button');
+        removeButton.type = 'button';
+        removeButton.className = 'btn btn-sm btn-outline-danger';
+        removeButton.textContent = 'Rimuovi';
+        removeButton.addEventListener('click', () => {
+            sediAziendali.splice(index, 1);
+            renderSedi();
+        });
+        actionsCell.appendChild(removeButton);
+        row.appendChild(actionsCell);
+        sediTableBody.appendChild(row);
+    });
+}
+
+function readSedeModal() {
+    return {
+        tipo_sede: document.getElementById('sede_tipo')?.value.trim() || '',
+        via: document.getElementById('sede_via')?.value.trim() || '',
+        numero_civico: document.getElementById('sede_numero_civico')?.value.trim() || '',
+        cap: document.getElementById('sede_cap')?.value.trim() || '',
+        regione: document.getElementById('sede_regione')?.value.trim() || '',
+        provincia: document.getElementById('sede_provincia')?.value.trim().toUpperCase() || '',
+        comune: document.getElementById('sede_comune')?.value.trim() || '',
+    };
+}
+
+function validateSede(sede) {
+    if (!sede.tipo_sede || !sede.via || !sede.numero_civico || !sede.cap || !sede.regione || !sede.provincia || !sede.comune) {
+        return 'Compila tutti i campi della sede.';
+    }
+    if (!/^\d{5}$/.test(sede.cap)) {
+        return 'Il CAP deve contenere 5 numeri.';
+    }
+    if (!/^[A-Z]{2}$/.test(sede.provincia)) {
+        return 'La provincia deve essere una sigla di 2 lettere.';
+    }
+    return '';
+}
+
+if (sedeModalElement) {
+    sedeModalElement.addEventListener('hidden.bs.modal', resetSedeModal);
+}
+
+const salvaSedeButton = document.getElementById('salva-sede');
+if (salvaSedeButton) {
+    salvaSedeButton.addEventListener('click', () => {
+        const sede = readSedeModal();
+        const error = validateSede(sede);
+        if (error) {
+            if (sedeModalError) {
+                sedeModalError.textContent = error;
+                sedeModalError.classList.remove('d-none');
+            }
+            return;
+        }
+        sediAziendali.push(sede);
+        renderSedi();
+        const modal = bootstrap.Modal.getInstance(sedeModalElement) || new bootstrap.Modal(sedeModalElement);
+        modal.hide();
+    });
+}
+
+function resetReferenteModal() {
+    if (!referenteModalForm) return;
+    ['referente_nome_cognome', 'referente_telefono', 'referente_email', 'referente_ruolo'].forEach((id) => {
+        const field = document.getElementById(id);
+        if (field) field.value = '';
+    });
+    if (referenteModalError) {
+        referenteModalError.classList.add('d-none');
+        referenteModalError.textContent = '';
+    }
+}
+
+function renderReferenti() {
+    if (!referentiHiddenFields || !referentiTableBody) return;
+    referentiHiddenFields.innerHTML = '';
+    referentiTableBody.innerHTML = '';
+
+    if (referentiAziendali.length === 0) {
+        const row = document.createElement('tr');
+        const cell = document.createElement('td');
+        cell.colSpan = 5;
+        cell.className = 'text-center text-muted py-3';
+        cell.textContent = 'Nessun referente inserito.';
+        row.appendChild(cell);
+        referentiTableBody.appendChild(row);
+        return;
+    }
+
+    referentiAziendali.forEach((referente, index) => {
+        addHiddenInput(referentiHiddenFields, 'referente_nome_cognome[]', referente.nome_cognome);
+        addHiddenInput(referentiHiddenFields, 'referente_telefono[]', referente.telefono);
+        addHiddenInput(referentiHiddenFields, 'referente_email[]', referente.email);
+        addHiddenInput(referentiHiddenFields, 'referente_ruolo[]', referente.ruolo);
+
+        const row = document.createElement('tr');
+        [referente.nome_cognome, referente.telefono, referente.email, referente.ruolo].forEach((value) => {
+            const cell = document.createElement('td');
+            cell.textContent = value || '-';
+            row.appendChild(cell);
+        });
+
+        const actionsCell = document.createElement('td');
+        const removeButton = document.createElement('button');
+        removeButton.type = 'button';
+        removeButton.className = 'btn btn-sm btn-outline-danger';
+        removeButton.textContent = 'Rimuovi';
+        removeButton.addEventListener('click', () => {
+            referentiAziendali.splice(index, 1);
+            renderReferenti();
+        });
+        actionsCell.appendChild(removeButton);
+        row.appendChild(actionsCell);
+        referentiTableBody.appendChild(row);
+    });
+}
+
+function readReferenteModal() {
+    return {
+        nome_cognome: document.getElementById('referente_nome_cognome')?.value.trim() || '',
+        telefono: document.getElementById('referente_telefono')?.value.trim() || '',
+        email: document.getElementById('referente_email')?.value.trim() || '',
+        ruolo: document.getElementById('referente_ruolo')?.value.trim() || '',
+    };
+}
+
+function validateReferente(referente) {
+    if (!referente.nome_cognome) {
+        return 'Inserisci nome e cognome del referente.';
+    }
+    if (referente.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(referente.email)) {
+        return 'Email referente non valida.';
+    }
+    return '';
+}
+
+if (referenteModalElement) {
+    referenteModalElement.addEventListener('hidden.bs.modal', resetReferenteModal);
+}
+
+const salvaReferenteButton = document.getElementById('salva-referente');
+if (salvaReferenteButton) {
+    salvaReferenteButton.addEventListener('click', () => {
+        const referente = readReferenteModal();
+        const error = validateReferente(referente);
+        if (error) {
+            if (referenteModalError) {
+                referenteModalError.textContent = error;
+                referenteModalError.classList.remove('d-none');
+            }
+            return;
+        }
+        referentiAziendali.push(referente);
+        renderReferenti();
+        const modal = bootstrap.Modal.getInstance(referenteModalElement) || new bootstrap.Modal(referenteModalElement);
+        modal.hide();
+    });
+}
+
+if (sedeModalForm) setupGeoSelectors(sedeModalForm);
+document.querySelectorAll('form').forEach((form) => { setupGeoSelectors(form); });
+renderSedi();
+renderReferenti();
+</script>
 <?php renderFooter(); ?>
