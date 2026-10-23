@@ -2,16 +2,14 @@
 require_once __DIR__ . '/config/database.php';
 require_once __DIR__ . '/includes/layout.php';
 require_once __DIR__ . '/includes/auth.php';
+require_once __DIR__ . '/includes/company.php';
 
 $TIPOLOGIE_AZIENDA = ['Promotore', 'Fornitore', 'Partner', 'Cliente'];
 $TIPI_SEDE = ['Legale', 'Amministrativa', 'Operativa'];
-$ORGANICO_OPTIONS = ['0-10', '11-25', '26-50', '51-250', '>250', 'Sconosciuto'];
-$FATTURATO_OPTIONS = ['<500K', '500-1000K', '1000-5000', '>5000'];
+$ORGANICO_OPTIONS = AZIENDA_ORGANICO_OPTIONS;
+$FATTURATO_OPTIONS = AZIENDA_FATTURATO_OPTIONS;
 $REGIONI_ITALIA = ['Abruzzo', 'Basilicata', 'Calabria', 'Campania', 'Emilia-Romagna', 'Friuli Venezia Giulia', 'Lazio', 'Liguria', 'Lombardia', 'Marche', 'Molise', 'Piemonte', 'Puglia', 'Sardegna', 'Sicilia', 'Toscana', 'Trentino-Alto Adige/Südtirol', 'Umbria', "Valle d'Aosta/Vallée d'Aoste", 'Veneto'];
-$CATEGORIE_MERCEOLOGICHE = [
-    'Agroalimentare', 'Commercio', 'Servizi', 'Edilizia', 'Formazione',
-    'Manifatturiero', 'Sanità', 'Trasporti', 'Turismo', 'P.A',
-];
+$CATEGORIE_MERCEOLOGICHE = AZIENDA_SETTORI;
 $EA_OPTIONS = [
     'Agricoltura e pesca',
     'Estrazione minerali (cave, miniere e giacimenti petroliferi)',
@@ -53,7 +51,7 @@ if (!isLoggedIn()) {
 $pdo->exec(
     "CREATE TABLE IF NOT EXISTS aziende (
         id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-        partita_iva VARCHAR(11) NOT NULL UNIQUE,
+        partita_iva VARCHAR(11) NULL UNIQUE,
         codice_fiscale VARCHAR(16) NULL,
         ragione_sociale VARCHAR(30) NOT NULL,
         iban VARCHAR(34) NULL,
@@ -85,6 +83,8 @@ $pdo->exec(
         CONSTRAINT fk_azienda_promotore FOREIGN KEY (promotore_azienda_id) REFERENCES aziende(id) ON DELETE SET NULL
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
 );
+
+ensureCompanyIdentifiers($pdo);
 
 $columnsAziende = $pdo->query('SHOW COLUMNS FROM aziende')->fetchAll(PDO::FETCH_COLUMN, 0);
 if (!in_array('regione', $columnsAziende, true)) {
@@ -147,11 +147,7 @@ if (!in_array('promotore_utente_id', $columnsAziende, true)) {
 
 $utenti = $pdo->query('SELECT id, nome, cognome FROM utenti ORDER BY nome, cognome')->fetchAll();
 // Include secondary roles as well as the primary role for existing users.
-$utentiRco = $pdo->query("SELECT u.id, u.nome, u.cognome FROM utenti u
-    WHERE u.ruolo IN ('Amministratore', 'Responsabile di Area', 'Consulente')
-       OR EXISTS (SELECT 1 FROM utenti_ruoli ur WHERE ur.utente_id = u.id
-           AND ur.ruolo IN ('Amministratore', 'Responsabile di Area', 'Consulente'))
-    ORDER BY u.nome, u.cognome")->fetchAll();
+$utentiRco = companyRcoUsers($pdo);
 $utentiPromotori = $pdo->query("SELECT u.id, u.nome, u.cognome FROM utenti u
     WHERE u.ruolo = 'Promotore'
        OR EXISTS (SELECT 1 FROM utenti_ruoli ur WHERE ur.utente_id = u.id AND ur.ruolo = 'Promotore')
@@ -357,13 +353,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $note = trim($_POST['note'] ?? '');
         $promotoreUtenteId = ($_POST['promotore_utente_id'] ?? '') !== '' ? (int) $_POST['promotore_utente_id'] : null;
 
-        if (!preg_match('/^\d{11}$/', $partitaIva)) {
-            $errors[] = 'Partita IVA obbligatoria: inserire esattamente 11 numeri.';
-        }
+        $errors = array_merge($errors, companyIdentifierErrors($pdo, $partitaIva, $codiceFiscale, $id));
 
-        if ($codiceFiscale !== '' && !preg_match('/^(\d{11}|[A-Z0-9]{16})$/', $codiceFiscale)) {
-            $errors[] = 'Codice fiscale non valido: usa 11 numeri o 16 caratteri alfanumerici.';
-        }
+
 
         if ($ragioneSociale === '' || mb_strlen($ragioneSociale) > 30) {
             $errors[] = 'Ragione Sociale obbligatoria e massimo 30 caratteri.';
@@ -446,7 +438,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         if (!$errors) {
             $params = [
-                ':partita_iva' => $partitaIva,
+                ':partita_iva' => $partitaIva !== '' ? $partitaIva : null,
                 ':codice_fiscale' => $codiceFiscale !== '' ? $codiceFiscale : null,
                 ':ragione_sociale' => $ragioneSociale,
                 ':iban' => $iban !== '' ? $iban : null,
@@ -559,7 +551,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $pdo->rollBack();
                 }
                 if ((int) ($e->errorInfo[1] ?? 0) === 1062) {
-                    $errors[] = 'Partita IVA già presente nel sistema.';
+                    $errors[] = 'Azienda già censita a sistema con questa Partita IVA.';
                 } else {
                     $errors[] = 'Errore durante il salvataggio dell\'azienda.';
                 }
@@ -718,11 +710,11 @@ $referentiFormJson = json_encode($referentiForm, JSON_HEX_TAG | JSON_HEX_APOS | 
                             <input type="hidden" name="id" value="<?= (int)($formData['id'] ?? 0) ?>">
 
                             <div class="col-md-4">
-                                <label class="form-label">Partita IVA *</label>
-                                <input class="form-control" name="partita_iva" maxlength="11" required value="<?= htmlspecialchars($formData['partita_iva'] ?? '') ?>">
+                                <label class="form-label">Partita IVA</label>
+                                <input class="form-control" name="partita_iva" maxlength="11" value="<?= htmlspecialchars($formData['partita_iva'] ?? '') ?>">
                             </div>
                             <div class="col-md-4">
-                                <label class="form-label">Codice Fiscale</label>
+                                <label class="form-label">Codice Fiscale (obbligatorio senza Partita IVA)</label>
                                 <input class="form-control" name="codice_fiscale" maxlength="16" value="<?= htmlspecialchars($formData['codice_fiscale'] ?? '') ?>">
                             </div>
                             <div class="col-md-4">
@@ -1198,7 +1190,7 @@ $referentiFormJson = json_encode($referentiForm, JSON_HEX_TAG | JSON_HEX_APOS | 
                         <?php endif; ?>
                         <?php foreach ($aziende as $azienda): ?>
                             <tr>
-                                <td><?= htmlspecialchars($azienda['partita_iva']) ?></td>
+                                <td><?= htmlspecialchars($azienda['partita_iva'] ?? '-') ?></td>
                                 <td><?= htmlspecialchars($azienda['ragione_sociale']) ?></td>
                                 <td><?= htmlspecialchars($azienda['tipologia_azienda']) ?></td>
                                 <td><?= htmlspecialchars($azienda['email'] ?? '-') ?></td>
