@@ -1,0 +1,479 @@
+%PDF-1.4
+%
+1 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>
+endobj
+2 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>
+endobj
+3 0 obj
+<< /Type /Pages /Kids [5 0 R 7 0 R 9 0 R 11 0 R 13 0 R 15 0 R 17 0 R 19 0 R 21 0 R] /Count 9 >>
+endobj
+4 0 obj
+<< /Length 579 >>
+stream
+0.09 0.21 0.36 rg 0 0 595.28 841.89 re f
+1 .47 .04 rg 52 565 491 4 re f
+BT /F2 31 Tf 1 1 1 rg 1 0 0 1 205.0 700.0 Tm (SunSet srl) Tj ET
+BT /F2 20 Tf 1 1 1 rg 1 0 0 1 104.0 610.0 Tm (SCHEDA TECNICA DEL SOFTWARE) Tj ET
+BT /F2 26 Tf 1 0.55 0.1 rg 1 0 0 1 230.0 558.0 Tm (Simplex) Tj ET
+BT /F2 11 Tf 0.75 0.84 0.9 rg 1 0 0 1 232.0 410.0 Tm (Committente) Tj ET
+BT /F2 18 Tf 1 1 1 rg 1 0 0 1 194.0 380.0 Tm (Ibis Management srl) Tj ET
+BT /F1 10 Tf 0.75 0.84 0.9 rg 1 0 0 1 225.0 210.0 Tm (Edizione 1.0) Tj ET
+BT /F1 10 Tf 0.75 0.84 0.9 rg 1 0 0 1 217.0 192.0 Tm (28 agosto 2026) Tj ET
+endstream
+endobj
+5 0 obj
+<< /Type /Page /Parent 3 0 R /MediaBox [0 0 595.28 841.89] /Resources << /Font << /F1 1 0 R /F2 2 0 R >> >> /Contents 4 0 R >>
+endobj
+6 0 obj
+<< /Length 6325 >>
+stream
+BT /F2 13 Tf 0.12 0.31 0.47 rg 1 0 0 1 52.0 769.0 Tm (1. Scopo e sintesi esecutiva) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 52.0 742.0 Tm (Simplex  un gestionale web monolitico per il governo del ciclo commerciale e operativo di una societ di) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 52.0 729.0 Tm (consulenza: anagrafiche, offerte, commesse, attivit, fatture, incassi e controllo della produzione.) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 52.0 716.0 Tm (L'applicazione privilegia un'architettura semplice da distribuire su uno stack PHP/MySQL tradizionale,) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 52.0 703.0 Tm (senza framework applicativo n processo di compilazione front-end.) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 52.0 683.0 Tm (Il flusso principale parte dall'acquisizione dell'azienda cliente, prosegue con la formulazione) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 52.0 670.0 Tm (dell'offerta e dei relativi momenti di lavoro, genera automaticamente una commessa quando l'offerta) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 52.0 657.0 Tm (diventa Aggiudicata, replica il piano operativo sulla commessa e produce una fattura al completamento di) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 52.0 644.0 Tm (un momento di chiusura. Il pagamento chiude il ciclo amministrativo.) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 52.0 624.0 Tm (Questa scheda descrive lo stato effettivamente rilevabile dal sorgente. Le funzioni indicate come limiti) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 52.0 611.0 Tm (o raccomandazioni non devono essere considerate gi implementate.) Tj ET
+BT /F2 13 Tf 0.12 0.31 0.47 rg 1 0 0 1 52.0 583.0 Tm (2. Architettura applicativa) Tj ET
+BT /F2 10.5 Tf 0.12 0.31 0.47 rg 1 0 0 1 52.0 548.0 Tm (2.1 Modello architetturale) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 524.0 Tm ( Applicazione server-side monolitica e multipagina \(MPA\): ogni area funzionale corrisponde a uno) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 511.0 Tm (script PHP raggiungibile direttamente.) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 496.0 Tm ( Rendering lato server: PHP genera HTML; i form usano richieste GET/POST tradizionali. Una chiamata) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 483.0 Tm (AJAX  impiegata per la creazione rapida dell'azienda nell'editor offerte.) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 468.0 Tm ( Accesso dati diretto: PDO  usato negli script senza ORM, repository layer o migration framework.) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 453.0 Tm ( Schema auto-inizializzante: numerose pagine eseguono CREATE TABLE IF NOT EXISTS e piccoli ALTER) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 440.0 Tm (TABLE al caricamento.  una strategia di compatibilit incrementale, non un sistema di migrazioni) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 427.0 Tm (versionato.) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 412.0 Tm ( Storage ibrido: metadati nel database; allegati nel filesystem sotto uploads/aziende,) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 399.0 Tm (uploads/offerte e uploads/commesse, organizzati per identificativo del record.) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 384.0 Tm ( Dipendenze client via CDN: Bootstrap 5.3.3 fornisce griglia, componenti, modali e comportamento) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 371.0 Tm (responsive; un foglio CSS locale definisce tema e navigazione.) Tj ET
+BT /F2 10.5 Tf 0.12 0.31 0.47 rg 1 0 0 1 52.0 343.0 Tm (2.2 Componenti) Tj ET
+BT /F1 7.2 Tf 0.15 0.2 0.23 rg 1 0 0 1 52.0 319.0 Tm (Livello | Componenti | Responsabilit) Tj ET
+BT /F1 7.2 Tf 0.15 0.2 0.23 rg 1 0 0 1 52.0 307.0 Tm (Presentazione | HTML5, Bootstrap, CSS, JavaScript inline | form, tabelle responsive, modali, filtri, calcoli e interazioni) Tj ET
+BT /F1 7.2 Tf 0.15 0.2 0.23 rg 1 0 0 1 52.0 295.0 Tm (Applicazione | script PHP per modulo | validazione, autorizzazione di base, regole di business, orchestrazione) Tj ET
+BT /F1 7.2 Tf 0.15 0.2 0.23 rg 1 0 0 1 52.0 283.0 Tm (Servizi comuni | includes/auth.php, includes/layout.php | sessione, identit corrente, login/logout, template e date italiane) Tj ET
+BT /F1 7.2 Tf 0.15 0.2 0.23 rg 1 0 0 1 52.0 271.0 Tm (Persistenza | PDO + MySQL | query preparate, transazioni selettive, vincoli e dati relazionali) Tj ET
+BT /F1 7.2 Tf 0.15 0.2 0.23 rg 1 0 0 1 52.0 259.0 Tm (Documentale | filesystem + tabelle *_file | caricamento, metadati, visualizzazione e download autenticati) Tj ET
+BT /F2 10.5 Tf 0.12 0.31 0.47 rg 1 0 0 1 52.0 234.0 Tm (2.3 Mappa degli endpoint) Tj ET
+BT /F1 7.2 Tf 0.15 0.2 0.23 rg 1 0 0 1 52.0 210.0 Tm (Endpoint | Funzione) Tj ET
+BT /F1 7.2 Tf 0.15 0.2 0.23 rg 1 0 0 1 52.0 198.0 Tm (index.php | reindirizzamento al login) Tj ET
+BT /F1 7.2 Tf 0.15 0.2 0.23 rg 1 0 0 1 52.0 186.0 Tm (login.php, logout.php, recupera-credenziali.php | accesso, chiusura sessione, reset con password temporanea) Tj ET
+BT /F1 7.2 Tf 0.15 0.2 0.23 rg 1 0 0 1 52.0 174.0 Tm (bacheca.php | dashboard per ruolo, commesse, scadenze e assegnazione consulenti) Tj ET
+BT /F1 7.2 Tf 0.15 0.2 0.23 rg 1 0 0 1 52.0 162.0 Tm (utenti.php | anagrafica utenti, stato e ruoli multipli) Tj ET
+BT /F1 7.2 Tf 0.15 0.2 0.23 rg 1 0 0 1 52.0 150.0 Tm (aziende.php | aziende, sedi, referenti, documenti e classificazioni) Tj ET
+BT /F1 7.2 Tf 0.15 0.2 0.23 rg 1 0 0 1 52.0 138.0 Tm (enti_certificazione.php | catalogo enti di certificazione) Tj ET
+BT /F1 7.2 Tf 0.15 0.2 0.23 rg 1 0 0 1 52.0 126.0 Tm (offerte.php | ciclo di vita offerte, piano attivit, documenti e generazione commessa) Tj ET
+BT /F1 7.2 Tf 0.15 0.2 0.23 rg 1 0 0 1 52.0 114.0 Tm (lavorazioni.php | fasi di lavorazione collegate all'offerta) Tj ET
+BT /F1 7.2 Tf 0.15 0.2 0.23 rg 1 0 0 1 52.0 102.0 Tm (commesse.php | dati operativi, momenti, completamento, fatture e documenti) Tj ET
+BT /F1 7.2 Tf 0.15 0.2 0.23 rg 1 0 0 1 52.0 90.0 Tm (fatture.php | consultazione fatture e registrazione/aggiornamento pagamento) Tj ET
+BT /F1 7.2 Tf 0.15 0.2 0.23 rg 1 0 0 1 52.0 78.0 Tm (pagamenti.php | registro e filtri degli incassi) Tj ET
+0.65 0.72 0.76 RG .5 w 52 42 m 543 42 l S
+BT /F1 7 Tf 0.35 0.42 0.46 rg 1 0 0 1 52.0 27.0 Tm (SunSet srl - Scheda tecnica Simplex - Committente: Ibis Management srl) Tj ET
+BT /F1 7 Tf 0.35 0.42 0.46 rg 1 0 0 1 512.0 27.0 Tm (2) Tj ET
+endstream
+endobj
+7 0 obj
+<< /Type /Page /Parent 3 0 R /MediaBox [0 0 595.28 841.89] /Resources << /Font << /F1 1 0 R /F2 2 0 R >> >> /Contents 6 0 R >>
+endobj
+8 0 obj
+<< /Length 5177 >>
+stream
+BT /F1 7.2 Tf 0.15 0.2 0.23 rg 1 0 0 1 52.0 782.0 Tm (amministrazione_produzione.php | reporting operativo e totale budget filtrato) Tj ET
+BT /F1 7.2 Tf 0.15 0.2 0.23 rg 1 0 0 1 52.0 770.0 Tm (download_*_file.php | streaming autenticato degli allegati) Tj ET
+BT /F2 13 Tf 0.12 0.31 0.47 rg 1 0 0 1 52.0 745.0 Tm (3. Tecnologie utilizzate) Tj ET
+BT /F2 10.5 Tf 0.12 0.31 0.47 rg 1 0 0 1 52.0 710.0 Tm (3.1 Back-end) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 686.0 Tm ( PHP moderno: type declaration, mixed, nullable type, str_starts_with, arrow function e gestione) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 673.0 Tm (Throwable indicano come requisito pratico PHP 8.0 o successivo.) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 658.0 Tm ( PDO MySQL: connessione DSN con charset utf8mb4, eccezioni abilitate, fetch associativo e prepared) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 645.0 Tm (statements nativi \(ATTR_EMULATE_PREPARES=false\).) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 630.0 Tm ( Sessioni PHP: memorizzano ID, username, nome completo e ruolo principale.) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 615.0 Tm ( API native: password_hash/password_verify, random_bytes, DateTime, Fileinfo quando disponibile,) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 602.0 Tm (upload HTTP e streaming con readfile.) Tj ET
+BT /F2 10.5 Tf 0.12 0.31 0.47 rg 1 0 0 1 52.0 574.0 Tm (3.2 Front-end) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 550.0 Tm ( HTML5 responsive con lingua italiana e viewport mobile.) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 535.0 Tm ( Bootstrap 5.3.3 CSS/JavaScript da jsDelivr: griglia, card, table, alert, badge, collapse e modal.) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 520.0 Tm ( CSS locale per sfondo, sidebar scura, menu e intestazioni tabellari.) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 505.0 Tm ( JavaScript vanilla inline per modali, righe dinamiche dei momenti, calcoli economici, selezione) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 492.0 Tm (dipendente delle sedi e creazione rapida azienda.) Tj ET
+BT /F2 10.5 Tf 0.12 0.31 0.47 rg 1 0 0 1 52.0 464.0 Tm (3.3 Database e filesystem) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 440.0 Tm ( MySQL/MariaDB compatibile, engine InnoDB e codifica utf8mb4.) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 425.0 Tm ( Tipi utilizzati: interi unsigned, YEAR, DATE, DATETIME, TIMESTAMP, DECIMAL, VARCHAR, TEXT, TINYINT) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 412.0 Tm (ed ENUM.) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 397.0 Tm ( Vincoli: primary key, unique key, foreign key con CASCADE o SET NULL dove dichiarate.) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 382.0 Tm ( Allegati salvati con nome fisico casuale e nome originale conservato nel database.) Tj ET
+BT /F2 13 Tf 0.12 0.31 0.47 rg 1 0 0 1 52.0 354.0 Tm (4. Funzionalit esaustive) Tj ET
+BT /F2 10.5 Tf 0.12 0.31 0.47 rg 1 0 0 1 52.0 319.0 Tm (4.1 Identit, accesso e sessione) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 295.0 Tm ( Login tramite nome utente oppure email; sono ammessi solo utenti attivi.) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 280.0 Tm ( Verifica password mediante hash PHP; password mai confrontate in chiaro.) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 265.0 Tm ( Logout con svuotamento sessione, scadenza del cookie e distruzione della sessione.) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 250.0 Tm ( Primo avvio: se non esistono utenti, la pagina utenti consente il bootstrap del primo account.) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 235.0 Tm ( Recupero credenziali: ricerca per username/email, controllo account attivo, creazione di 8) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 222.0 Tm (caratteri esadecimali casuali e immediato aggiornamento dell'hash. La password temporanea  mostrata) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 209.0 Tm (nella pagina; non  inviato alcun messaggio email.) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 194.0 Tm ( Non risulta implementata la funzione promessa di cambio password successivo al login.) Tj ET
+BT /F2 10.5 Tf 0.12 0.31 0.47 rg 1 0 0 1 52.0 166.0 Tm (4.2 Utenti e autorizzazioni) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 142.0 Tm ( Creazione e modifica di username, nome, cognome, telefono, email, password e stato attivo.) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 127.0 Tm ( Validazione email, obbligatoriet, password minima di 8 caratteri e gestione errori di unicit.) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 112.0 Tm ( Ruoli disponibili: Amministratore, Responsabile di Area, Consulente.) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 97.0 Tm ( Relazione molti-a-molti utenti_ruoli; il campo storico utenti.ruolo rimane come ruolo) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 84.0 Tm (principale/fallback.) Tj ET
+0.65 0.72 0.76 RG .5 w 52 42 m 543 42 l S
+BT /F1 7 Tf 0.35 0.42 0.46 rg 1 0 0 1 52.0 27.0 Tm (SunSet srl - Scheda tecnica Simplex - Committente: Ibis Management srl) Tj ET
+BT /F1 7 Tf 0.35 0.42 0.46 rg 1 0 0 1 512.0 27.0 Tm (3) Tj ET
+endstream
+endobj
+9 0 obj
+<< /Type /Page /Parent 3 0 R /MediaBox [0 0 595.28 841.89] /Resources << /Font << /F1 1 0 R /F2 2 0 R >> >> /Contents 8 0 R >>
+endobj
+10 0 obj
+<< /Length 5953 >>
+stream
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 782.0 Tm ( Dashboard: amministratore e responsabile di area vedono tutte le commesse; il consulente semplice) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 769.0 Tm (vede quelle assegnate al proprio nome. Il profilo contemporaneamente Consulente e Responsabile di) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 756.0 Tm (Area pu assegnare o riassegnare le commesse aggiudicate.) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 741.0 Tm ( Le altre pagine richiedono in generale soltanto una sessione autenticata: non emerge un controllo) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 728.0 Tm (granulare di ruolo per ciascuna operazione CRUD.) Tj ET
+BT /F2 10.5 Tf 0.12 0.31 0.47 rg 1 0 0 1 52.0 700.0 Tm (4.3 Bacheca) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 676.0 Tm ( Riepilogo delle commesse secondo la visibilit del ruolo.) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 661.0 Tm ( Elenco di protocollo commessa/offerta, azienda, servizio, stato e data di creazione.) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 646.0 Tm ( Vista delle offerte aggiudicate ordinata per scadenza crescente per amministratori/responsabili.) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 631.0 Tm ( Assegnazione consulente in modale, con token CSRF, validazione su elenco consulenti attivi e) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 618.0 Tm (transazione con blocco FOR UPDATE.) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 603.0 Tm ( Aggiornamento coordinato del consulente su offerta e commessa.) Tj ET
+BT /F2 10.5 Tf 0.12 0.31 0.47 rg 1 0 0 1 52.0 575.0 Tm (4.4 Anagrafica aziende) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 551.0 Tm ( CRUD dell'azienda con partita IVA, codice fiscale, ragione sociale, IBAN, tipologie multiple,) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 538.0 Tm (codice fatturazione, recapiti, PEC, email, sito e indirizzo.) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 523.0 Tm ( Classificazione commerciale: RCO, segnalatore, categoria merceologica, settore EA, fascia di) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 510.0 Tm (organico, fascia di fatturato, canale di conoscenza, prodotti, note e azienda promotrice.) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 495.0 Tm ( Partita IVA normalizzata e validata a 11 cifre, univoca; ragione sociale limitata a 30 caratteri.) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 480.0 Tm ( Tipologie: Promotore, Fornitore, Partner e Cliente; fasce organico 0-10, 10-50, 50-250 e 250+.) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 465.0 Tm ( Gestione di pi sedi Legale/Amministrativa/Operativa con indirizzo strutturato.) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 450.0 Tm ( Gestione di pi referenti con nome, telefono, email e ruolo.) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 435.0 Tm ( Salvataggio atomico di azienda, sedi e referenti mediante transazione; le collezioni figlie sono) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 422.0 Tm (riallineate con cancellazione e reinserimento.) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 407.0 Tm ( Vista dettaglio, elenco e ricerca estesa su campi anagrafici, geografici e classificativi.) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 392.0 Tm ( Upload e consultazione documenti associati.) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 377.0 Tm ( Creazione rapida da offerta con risposta JSON e aggiornamento immediato della select cliente.) Tj ET
+BT /F2 10.5 Tf 0.12 0.31 0.47 rg 1 0 0 1 52.0 349.0 Tm (4.5 Enti di certificazione) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 325.0 Tm ( Inserimento della denominazione, elenco alfabetico e cancellazione.) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 310.0 Tm ( L'ente  selezionabile nelle commesse relative a servizi di sistemi di gestione aziendale, con) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 297.0 Tm (relativo importo economico.) Tj ET
+BT /F2 10.5 Tf 0.12 0.31 0.47 rg 1 0 0 1 52.0 269.0 Tm (4.6 Offerte) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 245.0 Tm ( Protocollo progressivo annuale nel formato numero/anno, con vincoli di unicit.) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 230.0 Tm ( Stati: In Elaborazione, Inviata, Aggiudicata, Scaduta; gli stati storici Generata e In) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 217.0 Tm (Lavorazione vengono normalizzati.) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 202.0 Tm ( Servizi: sistemi di gestione aziendale, sicurezza, formazione, finanza agevolata, consulenza SOA e) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 189.0 Tm (altre consulenze.) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 174.0 Tm ( Catalogo dettagliato di certificazioni/consulenze, incluse norme ISO, GDPR, HACCP, sicurezza,) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 161.0 Tm (formazione e finanza agevolata.) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 146.0 Tm ( Collegamenti ad azienda, sede di erogazione, RCO, segnalatore, promotore e consulente incaricato.) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 131.0 Tm ( Dati commerciali: data, validit, scadenza, specifiche, note, modalit di pagamento, commissione e) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 118.0 Tm (sconto percentuale.) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 103.0 Tm ( Piano dei momenti con data, tipologia, costo totale, valore giornaliero, giorni e ore; totale) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 90.0 Tm (lordo, sconto e totale netto sono calcolati per la presentazione.) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 75.0 Tm ( Allegati con visualizzazione inline e download.) Tj ET
+0.65 0.72 0.76 RG .5 w 52 42 m 543 42 l S
+BT /F1 7 Tf 0.35 0.42 0.46 rg 1 0 0 1 52.0 27.0 Tm (SunSet srl - Scheda tecnica Simplex - Committente: Ibis Management srl) Tj ET
+BT /F1 7 Tf 0.35 0.42 0.46 rg 1 0 0 1 512.0 27.0 Tm (4) Tj ET
+endstream
+endobj
+11 0 obj
+<< /Type /Page /Parent 3 0 R /MediaBox [0 0 595.28 841.89] /Resources << /Font << /F1 1 0 R /F2 2 0 R >> >> /Contents 10 0 R >>
+endobj
+12 0 obj
+<< /Length 5403 >>
+stream
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 782.0 Tm ( Filtri per protocollo, servizio, stato, date e consulente; dettaglio dell'offerta e collegamento) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 769.0 Tm (alla commessa.) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 754.0 Tm ( Cancellazione dell'offerta; ove presenti i vincoli, la cancellazione propaga ai dati figli.) Tj ET
+BT /F2 10.5 Tf 0.12 0.31 0.47 rg 1 0 0 1 52.0 726.0 Tm (4.7 Generazione della commessa) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 702.0 Tm ( Al salvataggio di un'offerta Aggiudicata con consulente, ensureCommessa crea una sola commessa) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 689.0 Tm (grazie all'unicit di offerta_id.) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 674.0 Tm ( Il protocollo  progressivo per anno nel formato numero/anno.) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 659.0 Tm ( Il codice consulente  derivato dai primi due caratteri del nome completo; il nome  duplicato) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 646.0 Tm (sulla commessa come fotografia operativa.) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 631.0 Tm ( I momenti dell'offerta sono copiati nella tabella dei momenti della commessa.) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 616.0 Tm ( Se la commessa esiste gi, viene aggiornato il consulente senza duplicarla.) Tj ET
+BT /F2 10.5 Tf 0.12 0.31 0.47 rg 1 0 0 1 52.0 588.0 Tm (4.8 Lavorazioni e momenti operativi) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 52.0 564.0 Tm (Sono presenti due rappresentazioni correlate:) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 544.0 Tm (1. Fasi di lavorazione offerta \(offerta_lavorazioni\): apertura/chiusura lavori, importo, data) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 531.0 Tm (prevista, flag di fatturazione, valore giorno-uomo, ore e giorni, con crea/modifica/elimina.) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 516.0 Tm (2. Momenti di lavorazione \(offerta_momenti_lavorazione e commessa_momenti_lavorazione\): Apertura,) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 503.0 Tm (Consegna Documento di Sistema e Chiusura, con costo totale, incontri, studio, previsione e stato di) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 490.0 Tm (completamento.) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 52.0 470.0 Tm (Nella commessa  possibile aggiungere momenti, completare un momento una sola volta e vedere l'eventuale) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 52.0 457.0 Tm (fattura collegata.) Tj ET
+BT /F2 10.5 Tf 0.12 0.31 0.47 rg 1 0 0 1 52.0 429.0 Tm (4.9 Commesse) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 405.0 Tm ( Elenco delle commesse generate e ricerca per protocollo, cliente, consulente, offerta, data) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 392.0 Tm (R.A.L.I., DTG, budget, servizio e dettaglio.) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 377.0 Tm ( Dati operativi: protocollo/anno, consulente, data R.A.L.I., utente DTG, budget, cliente, ente di) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 364.0 Tm (certificazione e relativo importo.) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 349.0 Tm ( Gestione dei momenti e dei relativi indicatori di completamento.) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 334.0 Tm ( Upload, visualizzazione e download dei documenti di commessa.) Tj ET
+BT /F2 10.5 Tf 0.12 0.31 0.47 rg 1 0 0 1 52.0 306.0 Tm (4.10 Fatturazione e pagamenti) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 282.0 Tm ( Completando un momento di tipo Chiusura, viene creata automaticamente una fattura se non ne esiste) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 269.0 Tm (gi una per quel momento.) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 254.0 Tm ( Numero fattura univoco basato sull'identificativo e sull'anno; importo ricavato dal costo totale) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 241.0 Tm (del momento.) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 226.0 Tm ( Registro fatture con numero, anno, commessa, importo, stato pagata/non pagata, dettaglio e filtri.) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 211.0 Tm ( Registrazione pagamento in modale: data e modalit tra Contanti, Bonifico e Carta di Credito.) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 196.0 Tm ( Un pagamento per fattura: il nuovo invio aggiorna l'incasso esistente; la fattura viene marcata) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 183.0 Tm (pagata.) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 168.0 Tm ( Registro pagamenti con fattura, commessa, importo, data, modalit e data di creazione, corredato) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 155.0 Tm (da filtri.) Tj ET
+BT /F2 10.5 Tf 0.12 0.31 0.47 rg 1 0 0 1 52.0 127.0 Tm (4.11 Amministrazione / Produzione) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 103.0 Tm ( Report tabellare delle commesse con anno, consulente, offerta/stato, data R.A.L.I., DTG, budget e) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 90.0 Tm (cliente.) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 75.0 Tm ( Filtri testuali, esatti, data e intervallo budget.) Tj ET
+0.65 0.72 0.76 RG .5 w 52 42 m 543 42 l S
+BT /F1 7 Tf 0.35 0.42 0.46 rg 1 0 0 1 52.0 27.0 Tm (SunSet srl - Scheda tecnica Simplex - Committente: Ibis Management srl) Tj ET
+BT /F1 7 Tf 0.35 0.42 0.46 rg 1 0 0 1 512.0 27.0 Tm (5) Tj ET
+endstream
+endobj
+13 0 obj
+<< /Type /Page /Parent 3 0 R /MediaBox [0 0 595.28 841.89] /Resources << /Font << /F1 1 0 R /F2 2 0 R >> >> /Contents 12 0 R >>
+endobj
+14 0 obj
+<< /Length 5207 >>
+stream
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 782.0 Tm ( Calcolo del totale budget delle sole righe risultanti dal filtro.) Tj ET
+BT /F2 13 Tf 0.12 0.31 0.47 rg 1 0 0 1 52.0 754.0 Tm (5. Modello dati) Tj ET
+BT /F2 10.5 Tf 0.12 0.31 0.47 rg 1 0 0 1 52.0 719.0 Tm (5.1 Entit principali) Tj ET
+BT /F1 7.2 Tf 0.15 0.2 0.23 rg 1 0 0 1 52.0 695.0 Tm (Tabella | Contenuto e relazioni principali) Tj ET
+BT /F1 7.2 Tf 0.15 0.2 0.23 rg 1 0 0 1 52.0 683.0 Tm (utenti | credenziali, profilo, ruolo principale, stato) Tj ET
+BT /F1 7.2 Tf 0.15 0.2 0.23 rg 1 0 0 1 52.0 671.0 Tm (utenti_ruoli | ruoli multipli; chiave composta e cascata su utente) Tj ET
+BT /F1 7.2 Tf 0.15 0.2 0.23 rg 1 0 0 1 52.0 659.0 Tm (aziende | anagrafica estesa; riferimenti a utenti RCO/segnalatore e promotore) Tj ET
+BT /F1 7.2 Tf 0.15 0.2 0.23 rg 1 0 0 1 52.0 647.0 Tm (aziende_sedi | sedi multiple, cascata su azienda) Tj ET
+BT /F1 7.2 Tf 0.15 0.2 0.23 rg 1 0 0 1 52.0 635.0 Tm (aziende_referenti | contatti multipli, cascata su azienda) Tj ET
+BT /F1 7.2 Tf 0.15 0.2 0.23 rg 1 0 0 1 52.0 623.0 Tm (aziende_file | metadati allegati azienda) Tj ET
+BT /F1 7.2 Tf 0.15 0.2 0.23 rg 1 0 0 1 52.0 611.0 Tm (enti_certificazione | catalogo enti) Tj ET
+BT /F1 7.2 Tf 0.15 0.2 0.23 rg 1 0 0 1 52.0 599.0 Tm (offerte | protocollo, stato, servizio, relazioni commerciali e condizioni) Tj ET
+BT /F1 7.2 Tf 0.15 0.2 0.23 rg 1 0 0 1 52.0 587.0 Tm (offerte_file | metadati allegati offerta) Tj ET
+BT /F1 7.2 Tf 0.15 0.2 0.23 rg 1 0 0 1 52.0 575.0 Tm (offerta_lavorazioni | fasi economico-temporali dell'offerta) Tj ET
+BT /F1 7.2 Tf 0.15 0.2 0.23 rg 1 0 0 1 52.0 563.0 Tm (offerta_momenti_lavorazione | piano dei momenti da trasferire alla commessa) Tj ET
+BT /F1 7.2 Tf 0.15 0.2 0.23 rg 1 0 0 1 52.0 551.0 Tm (commesse | esecuzione dell'offerta aggiudicata; offerta_id univoco) Tj ET
+BT /F1 7.2 Tf 0.15 0.2 0.23 rg 1 0 0 1 52.0 539.0 Tm (commesse_file | metadati allegati commessa) Tj ET
+BT /F1 7.2 Tf 0.15 0.2 0.23 rg 1 0 0 1 52.0 527.0 Tm (commessa_momenti_lavorazione | piano operativo, completamento e valori economici) Tj ET
+BT /F1 7.2 Tf 0.15 0.2 0.23 rg 1 0 0 1 52.0 515.0 Tm (fatture | una fattura per momento tramite momento_id univoco) Tj ET
+BT /F1 7.2 Tf 0.15 0.2 0.23 rg 1 0 0 1 52.0 503.0 Tm (pagamenti | un pagamento per fattura tramite fattura_id univoco) Tj ET
+BT /F2 10.5 Tf 0.12 0.31 0.47 rg 1 0 0 1 52.0 478.0 Tm (5.2 Cardinalit logiche) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 454.0 Tm ( Utente 1:N Aziende come RCO o segnalatore; Utente N:M Ruoli.) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 439.0 Tm ( Azienda 1:N Sedi, Referenti, File e Offerte.) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 424.0 Tm ( Offerta 1:N File/Lavorazioni/Momenti e 1:0..1 Commessa.) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 409.0 Tm ( Commessa 1:N Momenti/File/Fatture.) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 394.0 Tm ( Momento commessa 1:0..1 Fattura; Fattura 1:0..1 Pagamento.) Tj ET
+BT /F2 10.5 Tf 0.12 0.31 0.47 rg 1 0 0 1 52.0 366.0 Tm (5.3 Integrit e progressivi) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 342.0 Tm ( Unicit esplicita per username, partita IVA, protocolli, coppie numero/anno, offerta della) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 329.0 Tm (commessa, momento fatturato e fattura pagata.) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 314.0 Tm ( Importi monetari memorizzati prevalentemente come DECIMAL\(12,2\) per evitare errori binari) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 301.0 Tm (persistenti.) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 286.0 Tm ( Progressivi ottenuti con MAX\(...\) + 1: la chiave univoca protegge dai duplicati, ma richieste) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 273.0 Tm (concorrenti possono produrre un errore da gestire/riprovare.) Tj ET
+BT /F2 13 Tf 0.12 0.31 0.47 rg 1 0 0 1 52.0 245.0 Tm (6. Tecniche di implementazione) Tj ET
+BT /F2 10.5 Tf 0.12 0.31 0.47 rg 1 0 0 1 52.0 210.0 Tm (6.1 Validazione e normalizzazione) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 186.0 Tm ( Input ripuliti con trim, cast espliciti, whitelist tramite in_array, filter_var per email e regex) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 173.0 Tm (per date/P.IVA.) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 158.0 Tm ( Importi italiani accettano la virgola e vengono normalizzati al punto.) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 143.0 Tm ( Helper data riconosce formati ISO e italiani e visualizza gg/mm/aaaa.) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 128.0 Tm ( Output dinamico HTML protetto prevalentemente con htmlspecialchars; note multilinea con nl2br dopo) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 115.0 Tm (escaping.) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 100.0 Tm ( Redirect dopo alcune mutazioni per evitare reinvii; messaggi temporanei in sessione nella) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 87.0 Tm (dashboard.) Tj ET
+0.65 0.72 0.76 RG .5 w 52 42 m 543 42 l S
+BT /F1 7 Tf 0.35 0.42 0.46 rg 1 0 0 1 52.0 27.0 Tm (SunSet srl - Scheda tecnica Simplex - Committente: Ibis Management srl) Tj ET
+BT /F1 7 Tf 0.35 0.42 0.46 rg 1 0 0 1 512.0 27.0 Tm (6) Tj ET
+endstream
+endobj
+15 0 obj
+<< /Type /Page /Parent 3 0 R /MediaBox [0 0 595.28 841.89] /Resources << /Font << /F1 1 0 R /F2 2 0 R >> >> /Contents 14 0 R >>
+endobj
+16 0 obj
+<< /Length 5483 >>
+stream
+BT /F2 10.5 Tf 0.12 0.31 0.47 rg 1 0 0 1 52.0 774.0 Tm (6.2 Persistenza e transazioni) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 750.0 Tm ( Query preparate e parametri nominati nella maggior parte dei percorsi.) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 735.0 Tm ( Transazioni nelle operazioni composte pi sensibili: riallineamento azienda/sedi/referenti e) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 722.0 Tm (assegnazione consulente.) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 707.0 Tm ( FOR UPDATE protegge l'offerta durante l'assegnazione dalla bacheca.) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 692.0 Tm ( Le pagine verificano la presenza di tabelle/colonne e applicano evoluzioni compatibili durante) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 679.0 Tm (l'esecuzione.) Tj ET
+BT /F2 10.5 Tf 0.12 0.31 0.47 rg 1 0 0 1 52.0 651.0 Tm (6.3 Gestione documentale) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 627.0 Tm ( Directory create con permessi 0775; file spostati con move_uploaded_file.) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 612.0 Tm ( Nome originale separato dal nome fisico; MIME determinato lato server quando Fileinfo ) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 599.0 Tm (disponibile.) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 584.0 Tm ( Endpoint di download verificano sessione, ID, record e presenza del file, impostano MIME,) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 571.0 Tm (lunghezza e Content-Disposition inline/attachment.) Tj ET
+BT /F2 13 Tf 0.12 0.31 0.47 rg 1 0 0 1 52.0 543.0 Tm (7. Sicurezza: misure presenti e valutazione) Tj ET
+BT /F2 10.5 Tf 0.12 0.31 0.47 rg 1 0 0 1 52.0 508.0 Tm (7.1 Misure presenti) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 484.0 Tm ( Hash password tramite algoritmo predefinito aggiornabile di PHP.) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 469.0 Tm ( Token casuali crittograficamente sicuri per password temporanea e CSRF della riassegnazione.) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 454.0 Tm ( Prepared statement PDO nativi, riducendo l'esposizione a SQL injection.) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 439.0 Tm ( Escape dell'output HTML, controlli di sessione e download non pubblici.) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 424.0 Tm ( Whitelist per ruoli, stati e modalit di pagamento in diversi flussi.) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 409.0 Tm ( InnoDB, vincoli univoci e foreign key in molte tabelle.) Tj ET
+BT /F2 10.5 Tf 0.12 0.31 0.47 rg 1 0 0 1 52.0 381.0 Tm (7.2 Lacune e rischi da trattare prima di una produzione esposta) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 357.0 Tm (1. Credenziali database nel sorgente: host, database, utente root e password vuota devono essere) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 344.0 Tm (trasferiti in variabili d'ambiente/secrets e sostituiti con un account a privilegi minimi.) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 329.0 Tm (2. CSRF non uniforme: il token compare nell'assegnazione da bacheca, ma non in tutti i form mutativi) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 316.0 Tm (\(CRUD, upload, pagamento, cancellazioni\).) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 301.0 Tm (3. Autorizzazione troppo ampia: salvo la dashboard, un utente autenticato pu generalmente) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 288.0 Tm (raggiungere le aree amministrative; serve RBAC centralizzato per azione e risorsa.) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 273.0 Tm (4. Recupero password: la password temporanea  mostrata a chi conosce username/email, senza prova di) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 260.0 Tm (possesso, scadenza, token monouso o rate limiting.) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 245.0 Tm (5. Session hardening: non  visibile rigenerazione dell'ID al login n configurazione esplicita) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 232.0 Tm (Secure, HttpOnly, SameSite, durata e timeout inattivit.) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 217.0 Tm (6. Upload: non emergono limiti applicativi espliciti di dimensione/estensione, scansione malware o) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 204.0 Tm (whitelist MIME; i file vanno conservati fuori dalla document root.) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 189.0 Tm (7. Header HTTP: mancano policy CSP, HSTS, X-Content-Type-Options, frame policy e referrer policy.) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 174.0 Tm (8. Error disclosure: l'errore PDO di connessione viene mostrato direttamente; in produzione va) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 161.0 Tm (registrato lato server e sostituito con messaggio neutro.) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 146.0 Tm (9. Audit: non esiste un registro applicativo immutabile di accessi e modifiche.) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 131.0 Tm (10. Configurazione CDN: Bootstrap dipende dalla rete e non usa Subresource Integrity nel markup) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 118.0 Tm (rilevato.) Tj ET
+BT /F2 13 Tf 0.12 0.31 0.47 rg 1 0 0 1 52.0 90.0 Tm (8. Requisiti di esercizio e installazione) Tj ET
+0.65 0.72 0.76 RG .5 w 52 42 m 543 42 l S
+BT /F1 7 Tf 0.35 0.42 0.46 rg 1 0 0 1 52.0 27.0 Tm (SunSet srl - Scheda tecnica Simplex - Committente: Ibis Management srl) Tj ET
+BT /F1 7 Tf 0.35 0.42 0.46 rg 1 0 0 1 512.0 27.0 Tm (7) Tj ET
+endstream
+endobj
+17 0 obj
+<< /Type /Page /Parent 3 0 R /MediaBox [0 0 595.28 841.89] /Resources << /Font << /F1 1 0 R /F2 2 0 R >> >> /Contents 16 0 R >>
+endobj
+18 0 obj
+<< /Length 5254 >>
+stream
+BT /F2 10.5 Tf 0.12 0.31 0.47 rg 1 0 0 1 52.0 774.0 Tm (8.1 Requisiti minimi consigliati) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 750.0 Tm ( Web server Apache 2.4 o Nginx recente con HTTPS.) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 735.0 Tm ( PHP 8.0+; consigliato PHP 8.2/8.3 compatibile con la versione di produzione.) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 720.0 Tm ( Estensioni PHP: pdo, pdo_mysql, session, mbstring, fileinfo; accesso a random_bytes e funzioni) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 707.0 Tm (password.) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 692.0 Tm ( MySQL 8.x o MariaDB equivalente con InnoDB e utf8mb4.) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 677.0 Tm ( Filesystem persistente scrivibile per uploads/; spazio dimensionato sulla retention documentale.) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 662.0 Tm ( Accesso a jsDelivr oppure distribuzione locale degli asset Bootstrap.) Tj ET
+BT /F2 10.5 Tf 0.12 0.31 0.47 rg 1 0 0 1 52.0 634.0 Tm (8.2 Procedura logica) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 610.0 Tm (1. Pubblicare i sorgenti nella document root configurando HTTPS.) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 595.0 Tm (2. Creare database e utente applicativo; impostare connessione senza conservare segreti nel) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 582.0 Tm (repository.) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 567.0 Tm (3. Concedere inizialmente i privilegi necessari alla creazione/alterazione schema, oppure estrarre) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 554.0 Tm (le DDL in migrazioni amministrate e poi revocarli.) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 539.0 Tm (4. Creare e proteggere le directory upload, preferibilmente fuori dall'area pubblica.) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 524.0 Tm (5. Accedere a utenti.php su database vuoto e creare il primo amministratore.) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 509.0 Tm (6. Eseguire smoke test di login, anagrafiche, offerta aggiudicata, commessa, chiusura, fattura,) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 496.0 Tm (pagamento e download.) Tj ET
+BT /F2 10.5 Tf 0.12 0.31 0.47 rg 1 0 0 1 52.0 468.0 Tm (8.3 Backup e ripristino) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 444.0 Tm ( Il backup  consistente solo se comprende insieme dump MySQL e directory upload.) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 429.0 Tm ( Prevedere backup cifrati, retention, verifica automatica e prove periodiche di ripristino.) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 414.0 Tm ( Prima di un rilascio effettuare snapshot di database e documenti; le DDL runtime non forniscono) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 401.0 Tm (rollback automatico.) Tj ET
+BT /F2 13 Tf 0.12 0.31 0.47 rg 1 0 0 1 52.0 373.0 Tm (9. Operativit, qualit e manutenibilit) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 346.0 Tm ( Non risultano presenti Composer, framework, test automatici, CI/CD, logging strutturato,) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 333.0 Tm (monitoraggio o file di configurazione per ambienti.) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 318.0 Tm ( La navigazione laterale  duplicata negli script: una modifica di menu richiede interventi) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 305.0 Tm (multipli.) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 290.0 Tm ( Regole, DDL, accesso dati e HTML convivono negli stessi file; ci accelera prototipazione e) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 277.0 Tm (piccoli interventi ma aumenta accoppiamento e costo dei test.) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 262.0 Tm ( La definizione schema  ripetuta e non sempre omogenea tra moduli; una migration unica e) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 249.0 Tm (versionata ridurrebbe il rischio di drift.) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 234.0 Tm ( Sono presenti sia offerta_lavorazioni sia offerta_momenti_lavorazione: va chiarito il confine) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 221.0 Tm (funzionale o pianificata una convergenza per evitare duplicazioni informative.) Tj ET
+BT /F2 13 Tf 0.12 0.31 0.47 rg 1 0 0 1 52.0 193.0 Tm (10. Raccomandazioni prioritarie) Tj ET
+BT /F2 10.5 Tf 0.12 0.31 0.47 rg 1 0 0 1 52.0 158.0 Tm (Priorit alta) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 134.0 Tm (1. Esternalizzare configurazione/segreti e usare un account DB dedicato.) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 119.0 Tm (2. Introdurre CSRF globale, RBAC server-side, rigenerazione sessione e recupero password con link) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 106.0 Tm (firmato, scadenza e verifica email.) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 91.0 Tm (3. Blindare upload/download: limiti, whitelist, antivirus, storage esterno alla web root e header) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 78.0 Tm (sicuri.) Tj ET
+0.65 0.72 0.76 RG .5 w 52 42 m 543 42 l S
+BT /F1 7 Tf 0.35 0.42 0.46 rg 1 0 0 1 52.0 27.0 Tm (SunSet srl - Scheda tecnica Simplex - Committente: Ibis Management srl) Tj ET
+BT /F1 7 Tf 0.35 0.42 0.46 rg 1 0 0 1 512.0 27.0 Tm (8) Tj ET
+endstream
+endobj
+19 0 obj
+<< /Type /Page /Parent 3 0 R /MediaBox [0 0 595.28 841.89] /Resources << /Font << /F1 1 0 R /F2 2 0 R >> >> /Contents 18 0 R >>
+endobj
+20 0 obj
+<< /Length 4422 >>
+stream
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 782.0 Tm (4. Versionare lo schema in migrazioni; eliminare DDL dalle richieste utente.) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 767.0 Tm (5. Aggiungere test di integrazione sui flussi economici e autorizzativi.) Tj ET
+BT /F2 10.5 Tf 0.12 0.31 0.47 rg 1 0 0 1 52.0 739.0 Tm (Priorit media) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 715.0 Tm (6. Centralizzare layout/menu, autorizzazioni, upload e servizi applicativi.) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 700.0 Tm (7. Rendere atomici generazione commessa, copia momenti, completamento e fatturazione; gestire) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 687.0 Tm (collisioni dei progressivi.) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 672.0 Tm (8. Aggiungere audit trail, log strutturati, gestione errori e metriche.) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 657.0 Tm (9. Definire cancellazione logica/retention per documenti fiscali e commerciali.) Tj ET
+BT /F2 10.5 Tf 0.12 0.31 0.47 rg 1 0 0 1 52.0 629.0 Tm (Priorit evolutiva) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 605.0 Tm (10. Separare livelli controller/service/repository, introdurre dependency management e pipeline CI.) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 590.0 Tm (11. Accessibilit WCAG, test responsive/browser e asset front-end locali/versionati.) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 575.0 Tm (12. Esportazioni PDF/CSV, notifiche di scadenza e riconciliazione pagamenti, se richieste dal) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 62.0 562.0 Tm (processo aziendale.) Tj ET
+BT /F2 13 Tf 0.12 0.31 0.47 rg 1 0 0 1 52.0 534.0 Tm (11. Matrice sintetica di tracciabilit) Tj ET
+BT /F1 7.2 Tf 0.15 0.2 0.23 rg 1 0 0 1 52.0 507.0 Tm (Processo | Ingresso | Elaborazione | Uscita) Tj ET
+BT /F1 7.2 Tf 0.15 0.2 0.23 rg 1 0 0 1 52.0 495.0 Tm (Accesso | username/email + password | verifica account e hash | sessione autenticata) Tj ET
+BT /F1 7.2 Tf 0.15 0.2 0.23 rg 1 0 0 1 52.0 483.0 Tm (Acquisizione cliente | anagrafica, sedi, referenti | validazione e transazione | azienda ricercabile) Tj ET
+BT /F1 7.2 Tf 0.15 0.2 0.23 rg 1 0 0 1 52.0 471.0 Tm (Preventivazione | servizio, cliente, condizioni, momenti | progressivo e calcoli | offerta protocollata) Tj ET
+BT /F1 7.2 Tf 0.15 0.2 0.23 rg 1 0 0 1 52.0 459.0 Tm (Aggiudicazione | stato + consulente | creazione idempotente e copia momenti | commessa protocollata) Tj ET
+BT /F1 7.2 Tf 0.15 0.2 0.23 rg 1 0 0 1 52.0 447.0 Tm (Esecuzione | momenti e dati produzione | avanzamento/completamento | stato operativo) Tj ET
+BT /F1 7.2 Tf 0.15 0.2 0.23 rg 1 0 0 1 52.0 435.0 Tm (Fatturazione | completamento chiusura | unicit per momento e importo | fattura) Tj ET
+BT /F1 7.2 Tf 0.15 0.2 0.23 rg 1 0 0 1 52.0 423.0 Tm (Incasso | data + modalit | upsert pagamento e stato pagata | registro pagamenti) Tj ET
+BT /F1 7.2 Tf 0.15 0.2 0.23 rg 1 0 0 1 52.0 411.0 Tm (Controllo | filtri | join e aggregazione budget | viste operative) Tj ET
+BT /F2 13 Tf 0.12 0.31 0.47 rg 1 0 0 1 52.0 386.0 Tm (12. Conclusione) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 52.0 359.0 Tm (Simplex copre in modo coerente il ciclo essenziale cliente -> offerta -> commessa -> lavorazione ->) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 52.0 346.0 Tm (fattura -> pagamento, con un modello dati relazionale, protocolli annuali, gestione documentale e viste) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 52.0 333.0 Tm (per il controllo operativo. La base tecnica  comprensibile e distribuibile con uno stack LAMP classico.) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 52.0 320.0 Tm (Per una messa in esercizio robusta e conforme alle aspettative di un sistema amministrativo, le azioni) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 52.0 307.0 Tm (pi importanti sono il consolidamento di sicurezza e autorizzazioni, la migrazione versionata del) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 52.0 294.0 Tm (database, la protezione documentale e l'introduzione di test, audit e procedure operative formalizzate.) Tj ET
+BT /F1 9 Tf 0.12 0.18 0.22 rg 1 0 0 1 52.0 264.0 Tm (Fine documento - SunSet srl - Committente: Ibis Management srl) Tj ET
+0.65 0.72 0.76 RG .5 w 52 42 m 543 42 l S
+BT /F1 7 Tf 0.35 0.42 0.46 rg 1 0 0 1 52.0 27.0 Tm (SunSet srl - Scheda tecnica Simplex - Committente: Ibis Management srl) Tj ET
+BT /F1 7 Tf 0.35 0.42 0.46 rg 1 0 0 1 512.0 27.0 Tm (9) Tj ET
+endstream
+endobj
+21 0 obj
+<< /Type /Page /Parent 3 0 R /MediaBox [0 0 595.28 841.89] /Resources << /Font << /F1 1 0 R /F2 2 0 R >> >> /Contents 20 0 R >>
+endobj
+22 0 obj
+<< /Type /Catalog /Pages 3 0 R /PageMode /UseNone >>
+endobj
+23 0 obj
+<< /Title (Scheda tecnica del software Simplex) /Author (SunSet srl) /Subject (Committente: Ibis Management srl) >>
+endobj
+xref
+0 24
+0000000000 65535 f 
+0000000015 00000 n 
+0000000112 00000 n 
+0000000214 00000 n 
+0000000325 00000 n 
+0000000954 00000 n 
+0000001096 00000 n 
+0000007472 00000 n 
+0000007614 00000 n 
+0000012842 00000 n 
+0000012984 00000 n 
+0000018989 00000 n 
+0000019133 00000 n 
+0000024588 00000 n 
+0000024732 00000 n 
+0000029991 00000 n 
+0000030135 00000 n 
+0000035670 00000 n 
+0000035814 00000 n 
+0000041120 00000 n 
+0000041264 00000 n 
+0000045738 00000 n 
+0000045882 00000 n 
+0000045951 00000 n 
+trailer
+<< /Size 24 /Root 22 0 R /Info 23 0 R >>
+startxref
+46083
+%%EOF
